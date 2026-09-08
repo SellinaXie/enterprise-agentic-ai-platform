@@ -1,0 +1,48 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+htmlcov/
+
+# Virtual environments and local secrets
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+!.env.example
+
+# Packaging and build outputs
+dist/
+build/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Local Codex work and deliverables
+work/
+outputs/
+
+# Operating-system and editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local runtime output
+*.log
