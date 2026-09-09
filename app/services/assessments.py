@@ -14,6 +14,8 @@ from app.core.exceptions import (
     DatabaseUnavailableError,
     PersistenceError,
 )
+from app.models.assessment import ExternalEvidenceStatus
+from app.models.knowledge import RAGPreparation, RetrievedEvidence
 from app.models.persisted_assessment import PersistedAssessment
 from app.schemas.assessment import (
     AssessmentFailure,
@@ -70,6 +72,12 @@ class AssessmentRepositoryProtocol(Protocol):
     def rollback(self) -> None: ...
 
 
+class AssessmentRAGProtocol(Protocol):
+    """RAG preparation required by the assessment workflow when enabled."""
+
+    def prepare(self, request: AssessmentRequest) -> RAGPreparation: ...
+
+
 class AssessmentService:
     """Coordinate generation and explicit persistence transaction boundaries."""
 
@@ -77,9 +85,11 @@ class AssessmentService:
         self,
         generator: AssessmentGenerator,
         repository: AssessmentRepositoryProtocol,
+        rag_service: AssessmentRAGProtocol | None = None,
     ) -> None:
         self._generator = generator
         self._repository = repository
+        self._rag_service = rag_service
 
     def generate_assessment(self, request: AssessmentRequest) -> AssessmentResponse:
         """Persist lifecycle state around synchronous structured generation."""
@@ -112,8 +122,20 @@ class AssessmentService:
         logger.info("assessment_marked_processing", extra={**log_context, "status": "processing"})
         logger.info("assessment_generation_started", extra=log_context)
 
+        evidence: tuple[RetrievedEvidence, ...] = ()
         try:
-            result = self._generator.generate(build_assessment_prompt(request))
+            rag_context = None
+            if self._rag_service is not None:
+                preparation = self._rag_service.prepare(request)
+                evidence = preparation.evidence
+                rag_context = preparation.context
+            prompt = (
+                build_assessment_prompt(request, rag_context)
+                if rag_context is not None
+                else build_assessment_prompt(request)
+            )
+            result = self._generator.generate(prompt)
+            result = self._apply_grounding_metadata(result, evidence)
         except ApplicationError as exc:
             self._persist_failure(
                 assessment_id,
@@ -156,6 +178,10 @@ class AssessmentService:
         logger.info(
             "assessment_result_persisted",
             extra={**log_context, "status": "completed"},
+        )
+        logger.info(
+            "grounded_assessment_generated",
+            extra={**log_context, "retrieval_count": len(evidence)},
         )
         logger.info(
             "assessment_completed",
@@ -219,6 +245,29 @@ class AssessmentService:
         if isinstance(exc, OperationalError):
             return DatabaseUnavailableError()
         return PersistenceError()
+
+    @staticmethod
+    def _apply_grounding_metadata(
+        result: AssessmentResult,
+        evidence: tuple[RetrievedEvidence, ...],
+    ) -> AssessmentResult:
+        allowed = {(item.document_id, item.chunk_id) for item in evidence}
+        seen: set[tuple[UUID, UUID]] = set()
+        references = []
+        for reference in result.source_references:
+            key = (reference.document_id, reference.chunk_id)
+            if key in allowed and key not in seen:
+                references.append(reference)
+                seen.add(key)
+        status = (
+            ExternalEvidenceStatus.RETRIEVED if evidence else ExternalEvidenceStatus.NOT_RETRIEVED
+        )
+        return result.model_copy(
+            update={
+                "external_evidence_status": status,
+                "source_references": references,
+            }
+        )
 
     @staticmethod
     def _to_response(record: PersistedAssessment) -> AssessmentResponse:

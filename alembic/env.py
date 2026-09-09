@@ -7,7 +7,11 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.core.config import Settings
 from app.db.base import Base
-from app.db.models import AssessmentModel  # noqa: F401
+from app.db.models import (  # noqa: F401
+    AssessmentModel,
+    KnowledgeChunkModel,
+    KnowledgeDocumentModel,
+)
 from app.db.session import get_database_url
 
 config = context.config

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enterprise-ai-transformation-advisor"
-version = "0.3.0"
-description = "Persistent backend for assessing enterprise AI transformation opportunities."
+version = "0.4.0"
+description = "Grounded enterprise AI assessments with PostgreSQL-backed RAG knowledge."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.115,<1.0",
     "langgraph>=0.2.45,<2.0",
     "openai>=2.0,<3.0",
+    "pgvector>=0.5,<1.0",
     "psycopg[binary]>=3.2,<4.0",
     "pydantic-settings>=2.6,<3.0",
     "sqlalchemy>=2.0.36,<3.0",

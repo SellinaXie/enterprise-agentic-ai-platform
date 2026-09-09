@@ -18,7 +18,7 @@ def alembic_config(output_buffer: StringIO | None = None) -> Config:
 def test_alembic_has_one_linear_head() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
-    assert script.get_heads() == ["20260909_0001"]
+    assert script.get_heads() == ["20260909_0002"]
     assert script.get_base() == "20260909_0001"
 
 
@@ -37,6 +37,27 @@ def test_initial_migration_renders_postgresql_schema(monkeypatch: MonkeyPatch) -
     assert "UUID" in sql
     assert "ix_assessments_status" in sql
     assert "ix_assessments_created_at" in sql
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in sql
+    assert "CREATE TABLE knowledge_documents" in sql
+    assert "CREATE TABLE knowledge_chunks" in sql
+    assert "VECTOR(1536)" in sql
+    assert "USING hnsw" in sql
+    assert "vector_cosine_ops" in sql
+
+
+def test_v3_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:
+    output = StringIO()
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://migration_test:placeholder@localhost/migration_test",
+    )
+
+    command.downgrade(alembic_config(output), "20260909_0002:20260909_0001", sql=True)
+
+    sql = output.getvalue()
+    assert "DROP TABLE knowledge_chunks" in sql
+    assert "DROP TABLE knowledge_documents" in sql
+    assert "DROP EXTENSION" not in sql
 
 
 def test_initial_migration_renders_downgrade(monkeypatch: MonkeyPatch) -> None:

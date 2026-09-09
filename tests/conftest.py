@@ -14,6 +14,8 @@ from app.db.base import Base
 from app.db.models import AssessmentModel  # noqa: F401
 from app.db.session import get_engine, get_session_factory
 from app.main import create_app
+from app.schemas.knowledge import KnowledgeDocumentCreate
+from tests.knowledge_fixtures import build_synthetic_knowledge_corpus
 
 
 @pytest.fixture
@@ -74,3 +76,9 @@ def client(app: FastAPI) -> Iterator[TestClient]:
     """Return a test client without making external API calls."""
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def synthetic_knowledge_corpus() -> list[KnowledgeDocumentCreate]:
+    """Return deterministic local knowledge with no external dataset dependency."""
+    return build_synthetic_knowledge_corpus()

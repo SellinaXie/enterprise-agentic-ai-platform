@@ -64,3 +64,10 @@ class RiskSeverity(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class ExternalEvidenceStatus(StrEnum):
+    """Whether a structured assessment used retrieved external knowledge."""
+
+    RETRIEVED = "retrieved"
+    NOT_RETRIEVED = "not_retrieved"

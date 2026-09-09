@@ -1,4 +1,4 @@
-"""Declarative base and naming conventions for persisted application state."""
+"""Declarative base and naming conventions for state and knowledge persistence."""
 
 from sqlalchemy import MetaData
 from sqlalchemy.orm import DeclarativeBase

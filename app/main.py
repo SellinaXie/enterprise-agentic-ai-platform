@@ -19,7 +19,14 @@ from app.core.exceptions import (
     AssessmentNotFoundError,
     DatabaseNotConfiguredError,
     DatabaseUnavailableError,
+    EmbeddingNotConfiguredError,
+    EmbeddingProviderError,
+    EmptyKnowledgeDocumentError,
+    InvalidEmbeddingError,
     InvalidLLMResponseError,
+    KnowledgeDocumentNotFoundError,
+    KnowledgePersistenceError,
+    KnowledgeStoreUnavailableError,
     LLMProviderError,
     OpenAIClientNotConfiguredError,
     PersistenceError,
@@ -64,6 +71,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             DatabaseNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
             DatabaseUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
             PersistenceError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            EmbeddingNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            EmbeddingProviderError: status.HTTP_502_BAD_GATEWAY,
+            InvalidEmbeddingError: status.HTTP_502_BAD_GATEWAY,
+            EmptyKnowledgeDocumentError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            KnowledgeDocumentNotFoundError: status.HTTP_404_NOT_FOUND,
+            KnowledgeStoreUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            KnowledgePersistenceError: status.HTTP_503_SERVICE_UNAVAILABLE,
         }
         payload = ErrorResponse(error=ErrorDetail(code=exc.error_code, message=exc.public_message))
         return JSONResponse(

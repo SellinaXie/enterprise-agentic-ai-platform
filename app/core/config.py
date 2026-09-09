@@ -1,10 +1,12 @@
 """Environment-backed application settings."""
 
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+KNOWLEDGE_EMBEDDING_DIMENSION = 1536
 
 
 class Settings(BaseSettings):
@@ -37,7 +39,22 @@ class Settings(BaseSettings):
     openai_max_retries: int = Field(default=2, ge=0, le=10)
     openai_store_responses: bool = False
 
+    rag_enabled: bool = False
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimension: Literal[1536] = KNOWLEDGE_EMBEDDING_DIMENSION
+    rag_chunk_size: int = Field(default=1_200, ge=200, le=20_000)
+    rag_chunk_overlap: int = Field(default=200, ge=0, le=5_000)
+    rag_retrieval_top_k: int = Field(default=5, ge=1, le=20)
+    rag_similarity_threshold: float = Field(default=0.35, ge=-1.0, le=1.0)
+
     langgraph_recursion_limit: int = Field(default=25, ge=1, le=1_000)
+
+    @model_validator(mode="after")
+    def validate_chunk_settings(self) -> Self:
+        """Require overlap to be smaller than the deterministic chunk size."""
+        if self.rag_chunk_overlap >= self.rag_chunk_size:
+            raise ValueError("RAG_CHUNK_OVERLAP must be smaller than RAG_CHUNK_SIZE")
+        return self
 
 
 @lru_cache

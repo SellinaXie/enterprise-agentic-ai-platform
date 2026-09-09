@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.models.assessment import (
     AssessmentStatus,
     ComplexityLevel,
+    ExternalEvidenceStatus,
     PriorityLevel,
     RiskCategory,
     RiskSeverity,
@@ -99,6 +100,14 @@ class NextStep(StructuredOutputModel):
     rationale: str
 
 
+class SourceReference(StructuredOutputModel):
+    """Reference to retrieved evidence without reproducing source content."""
+
+    document_id: UUID
+    chunk_id: UUID
+    document_title: str
+
+
 class AssessmentResult(StructuredOutputModel):
     """Complete schema-constrained enterprise AI assessment."""
 
@@ -112,6 +121,8 @@ class AssessmentResult(StructuredOutputModel):
     next_steps: list[NextStep]
     assumptions: list[str]
     information_gaps: list[str]
+    external_evidence_status: ExternalEvidenceStatus = ExternalEvidenceStatus.NOT_RETRIEVED
+    source_references: list[SourceReference] = Field(default_factory=list)
 
 
 class AssessmentFailure(BaseModel):

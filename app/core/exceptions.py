@@ -65,3 +65,54 @@ class AssessmentNotFoundError(ApplicationError):
 
     error_code = "assessment_not_found"
     public_message = "The requested assessment was not found."
+
+
+class EmbeddingNotConfiguredError(ApplicationError):
+    """Raised when knowledge embedding is requested without provider credentials."""
+
+    error_code = "embedding_not_configured"
+    public_message = (
+        "Knowledge embeddings are unavailable because OPENAI_API_KEY is not configured."
+    )
+
+
+class EmbeddingProviderError(ApplicationError):
+    """Raised when the embedding provider cannot complete a request."""
+
+    error_code = "embedding_provider_error"
+    public_message = "Knowledge embedding generation is temporarily unavailable. Please try again."
+
+
+class InvalidEmbeddingError(ApplicationError):
+    """Raised when embedding output has the wrong shape or invalid values."""
+
+    error_code = "invalid_embedding"
+    public_message = "The embedding service returned an invalid vector. Please try again."
+
+
+class EmptyKnowledgeDocumentError(ApplicationError):
+    """Raised when normalization leaves no ingestible text."""
+
+    error_code = "empty_knowledge_document"
+    public_message = "The knowledge document must contain non-whitespace text."
+
+
+class KnowledgeDocumentNotFoundError(ApplicationError):
+    """Raised when a requested knowledge document does not exist."""
+
+    error_code = "knowledge_document_not_found"
+    public_message = "The requested knowledge document was not found."
+
+
+class KnowledgeStoreUnavailableError(ApplicationError):
+    """Raised when PostgreSQL or pgvector cannot serve a knowledge operation."""
+
+    error_code = "knowledge_store_unavailable"
+    public_message = "The knowledge store is temporarily unavailable. Please try again."
+
+
+class KnowledgePersistenceError(ApplicationError):
+    """Raised when knowledge records cannot be persisted safely."""
+
+    error_code = "knowledge_persistence_error"
+    public_message = "The knowledge document could not be persisted. Please try again."

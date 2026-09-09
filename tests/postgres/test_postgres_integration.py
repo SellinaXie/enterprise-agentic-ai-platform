@@ -9,19 +9,31 @@ import pytest
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
 from openai import OpenAI
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy import Engine, inspect, select, text
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.api.dependencies import get_assessment_generator
+from app.api.dependencies import get_assessment_generator, get_embeddings_service
 from app.core.config import Settings
 from app.db.models.assessment import AssessmentModel
 from app.main import create_app
-from app.models.assessment import AssessmentStatus
+from app.models.assessment import AssessmentStatus, ExternalEvidenceStatus
+from app.rag.ingestion import KnowledgeIngestionService
+from app.rag.retrieval import RetrievalService
 from app.repositories.assessments import AssessmentRepository
-from app.schemas.assessment import AssessmentRequest, AssessmentResponse, AssessmentResult
+from app.repositories.knowledge_chunks import KnowledgeChunkRepository
+from app.repositories.knowledge_documents import KnowledgeDocumentRepository
+from app.schemas.assessment import (
+    AssessmentRequest,
+    AssessmentResponse,
+    AssessmentResult,
+    SourceReference,
+)
+from app.schemas.knowledge import KnowledgeDocumentCreate
 from app.services.llm import OpenAIAssessmentGenerator
+from tests.knowledge_fixtures import DeterministicEmbeddingsService
 
 pytestmark = pytest.mark.postgres
 
@@ -47,10 +59,20 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
 
     schema = inspect(postgres_engine)
     columns = {column["name"]: column for column in schema.get_columns("assessments")}
+    knowledge_columns = {
+        column["name"]: column for column in schema.get_columns("knowledge_chunks")
+    }
+    with postgres_engine.connect() as connection:
+        vector_version = connection.execute(
+            text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+        ).scalar_one()
 
     assert version.startswith("PostgreSQL ")
-    assert revision == "20260909_0001"
+    assert revision == "20260909_0002"
     assert "assessments" in schema.get_table_names()
+    assert "knowledge_documents" in schema.get_table_names()
+    assert "knowledge_chunks" in schema.get_table_names()
+    assert vector_version
     assert isinstance(columns["id"]["type"], PostgreSQLUUID)
     assert isinstance(columns["request_payload"]["type"], JSONB)
     assert isinstance(columns["result_payload"]["type"], JSONB)
@@ -58,6 +80,42 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
     assert columns["created_at"]["type"].timezone is True
     assert columns["updated_at"]["type"].timezone is True
     assert columns["completed_at"]["type"].timezone is True
+    assert isinstance(knowledge_columns["embedding"]["type"], VECTOR)
+    assert knowledge_columns["embedding"]["type"].dim == 1536
+
+
+def test_pgvector_knowledge_ingestion_and_similarity_search(
+    postgres_session_factory: sessionmaker[Session],
+    synthetic_knowledge_corpus: list[KnowledgeDocumentCreate],
+) -> None:
+    """Persist synthetic JSONB/vector data and retrieve the nearest compliance source."""
+    embeddings = DeterministicEmbeddingsService(dimension=1536)
+    with postgres_session_factory() as session:
+        documents = KnowledgeDocumentRepository(session)
+        chunks = KnowledgeChunkRepository(session)
+        ingestion = KnowledgeIngestionService(
+            documents=documents,
+            chunks=chunks,
+            embeddings=embeddings,
+            chunk_size=1_200,
+            chunk_overlap=200,
+        )
+        ingested = [ingestion.ingest(document) for document in synthetic_knowledge_corpus]
+        retrieval = RetrievalService(
+            chunks=chunks,
+            embeddings=embeddings,
+            top_k=3,
+            similarity_threshold=0.5,
+        )
+        results = retrieval.search("compliance review for regulated lending")
+        stored_chunks = chunks.list_by_document(ingested[1].document.document_id)
+
+    assert results
+    assert results[0].document_title == "Synthetic Financial Services Compliance Workflow"
+    assert results[0].metadata["document"] == {"topic": "compliance", "synthetic": True}
+    assert len({result.chunk_id for result in results}) == len(results)
+    assert len(stored_chunks[0].embedding) == 1536
+    assert stored_chunks[0].metadata["content_hash"]
 
 
 def test_repository_create_get_and_completed_round_trip(
@@ -159,12 +217,38 @@ def test_postgres_constraints_accept_independent_rows(
 def test_api_create_and_get_with_mocked_openai(
     postgres_database_url: str,
     postgres_engine: Engine,
+    postgres_session_factory: sessionmaker[Session],
     synthetic_assessment_request: AssessmentRequest,
     synthetic_assessment_result: AssessmentResult,
+    synthetic_knowledge_corpus: list[KnowledgeDocumentCreate],
 ) -> None:
-    """Exercise POST and GET through FastAPI, real PostgreSQL, and a mocked provider."""
+    """Exercise grounded POST/GET with real pgvector and mocked OpenAI calls."""
     del postgres_engine
-    expected_result = synthetic_assessment_result
+    embeddings = DeterministicEmbeddingsService(dimension=1536)
+    with postgres_session_factory() as session:
+        documents = KnowledgeDocumentRepository(session)
+        chunks = KnowledgeChunkRepository(session)
+        ingested = KnowledgeIngestionService(
+            documents=documents,
+            chunks=chunks,
+            embeddings=embeddings,
+            chunk_size=1_200,
+            chunk_overlap=200,
+        ).ingest(synthetic_knowledge_corpus[1])
+        chunk = chunks.list_by_document(ingested.document.document_id)[0]
+
+    expected_result = synthetic_assessment_result.model_copy(
+        update={
+            "external_evidence_status": ExternalEvidenceStatus.RETRIEVED,
+            "source_references": [
+                SourceReference(
+                    document_id=ingested.document.document_id,
+                    chunk_id=chunk.chunk_id,
+                    document_title=ingested.document.title,
+                )
+            ],
+        }
+    )
     openai_client = Mock()
     openai_client.responses.parse.return_value = SimpleNamespace(output_parsed=expected_result)
     generator = OpenAIAssessmentGenerator(
@@ -177,9 +261,11 @@ def test_api_create_and_get_with_mocked_openai(
         APP_LOG_LEVEL="ERROR",
         DATABASE_URL=postgres_database_url,
         OPENAI_API_KEY=None,
+        RAG_ENABLED=True,
     )
     application = create_app(settings)
     application.dependency_overrides[get_assessment_generator] = lambda: generator
+    application.dependency_overrides[get_embeddings_service] = lambda: embeddings
 
     with TestClient(application) as client:
         created_response = client.post(

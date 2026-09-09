@@ -111,7 +111,7 @@ def synthetic_assessment_result() -> AssessmentResult:
 
 @pytest.fixture(scope="session")
 def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
-    """Reset the V2 schema and provide a connected PostgreSQL engine."""
+    """Reset the complete schema and provide a connected PostgreSQL engine."""
     probe_engine = create_engine(postgres_database_url, pool_pre_ping=True)
     try:
         with probe_engine.connect() as connection:
@@ -138,6 +138,9 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
             with migration_engine.connect() as connection:
                 downgrade_revision = MigrationContext.configure(connection).get_current_revision()
                 assessment_table_removed = not inspect(connection).has_table("assessments")
+                knowledge_tables_removed = not inspect(connection).has_table(
+                    "knowledge_documents"
+                ) and not inspect(connection).has_table("knowledge_chunks")
         finally:
             migration_engine.dispose()
 
@@ -148,13 +151,18 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
             with migration_engine.connect() as connection:
                 upgrade_revision = MigrationContext.configure(connection).get_current_revision()
                 assessment_table_created = inspect(connection).has_table("assessments")
+                knowledge_tables_created = inspect(connection).has_table(
+                    "knowledge_documents"
+                ) and inspect(connection).has_table("knowledge_chunks")
         finally:
             migration_engine.dispose()
 
     assert downgrade_revision is None
     assert assessment_table_removed
-    assert upgrade_revision == "20260909_0001"
+    assert knowledge_tables_removed
+    assert upgrade_revision == "20260909_0002"
     assert assessment_table_created
+    assert knowledge_tables_created
 
     get_session_factory.cache_clear()
     get_engine.cache_clear()
@@ -164,6 +172,8 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
     finally:
         with database_engine.begin() as connection:
             connection.execute(text("DELETE FROM assessments"))
+            connection.execute(text("DELETE FROM knowledge_chunks"))
+            connection.execute(text("DELETE FROM knowledge_documents"))
         database_engine.dispose()
         get_session_factory.cache_clear()
         get_engine.cache_clear()
@@ -180,10 +190,14 @@ def postgres_session_factory(
 
 
 @pytest.fixture(autouse=True)
-def clean_postgres_assessments(postgres_engine: Engine) -> Iterator[None]:
+def clean_postgres_test_data(postgres_engine: Engine) -> Iterator[None]:
     """Keep every PostgreSQL test independent of execution order."""
     with postgres_engine.begin() as connection:
         connection.execute(text("DELETE FROM assessments"))
+        connection.execute(text("DELETE FROM knowledge_chunks"))
+        connection.execute(text("DELETE FROM knowledge_documents"))
     yield
     with postgres_engine.begin() as connection:
         connection.execute(text("DELETE FROM assessments"))
+        connection.execute(text("DELETE FROM knowledge_chunks"))
+        connection.execute(text("DELETE FROM knowledge_documents"))
