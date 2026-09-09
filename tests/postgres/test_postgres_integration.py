@@ -1,0 +1,199 @@
+"""Live verification of the V2 application-state layer on PostgreSQL."""
+
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import Mock
+from uuid import UUID, uuid4
+
+import pytest
+from alembic.migration import MigrationContext
+from fastapi.testclient import TestClient
+from openai import OpenAI
+from sqlalchemy import Engine, inspect, select, text
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from sqlalchemy.dialects.postgresql import UUID as PostgreSQLUUID
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.api.dependencies import get_assessment_generator
+from app.core.config import Settings
+from app.db.models.assessment import AssessmentModel
+from app.main import create_app
+from app.models.assessment import AssessmentStatus
+from app.repositories.assessments import AssessmentRepository
+from app.schemas.assessment import AssessmentRequest, AssessmentResponse, AssessmentResult
+from app.services.llm import OpenAIAssessmentGenerator
+
+pytestmark = pytest.mark.postgres
+
+
+def _create(repository: AssessmentRepository, request: AssessmentRequest) -> UUID:
+    assessment_id = uuid4()
+    repository.create(
+        assessment_id=assessment_id,
+        company_name=request.company_name,
+        industry=request.industry,
+        business_problem=request.business_problem,
+        request_payload=request.model_dump(mode="json"),
+    )
+    repository.commit()
+    return assessment_id
+
+
+def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None:
+    """Verify the server, Alembic head, table, and native PostgreSQL column types."""
+    with postgres_engine.connect() as connection:
+        version = connection.execute(text("SELECT version()")).scalar_one()
+        revision = MigrationContext.configure(connection).get_current_revision()
+
+    schema = inspect(postgres_engine)
+    columns = {column["name"]: column for column in schema.get_columns("assessments")}
+
+    assert version.startswith("PostgreSQL ")
+    assert revision == "20260909_0001"
+    assert "assessments" in schema.get_table_names()
+    assert isinstance(columns["id"]["type"], PostgreSQLUUID)
+    assert isinstance(columns["request_payload"]["type"], JSONB)
+    assert isinstance(columns["result_payload"]["type"], JSONB)
+    assert isinstance(columns["created_at"]["type"], TIMESTAMP)
+    assert columns["created_at"]["type"].timezone is True
+    assert columns["updated_at"]["type"].timezone is True
+    assert columns["completed_at"]["type"].timezone is True
+
+
+def test_repository_create_get_and_completed_round_trip(
+    postgres_session_factory: sessionmaker[Session],
+    synthetic_assessment_request: AssessmentRequest,
+    synthetic_assessment_result: AssessmentResult,
+) -> None:
+    """Round-trip UUID, JSONB, timestamps, status updates, and a completed result."""
+    request = synthetic_assessment_request
+    expected_result = synthetic_assessment_result
+
+    with postgres_session_factory() as session:
+        repository = AssessmentRepository(session)
+        assessment_id = _create(repository, request)
+        pending = repository.get_by_id(assessment_id)
+        processing = repository.mark_processing(assessment_id)
+        repository.commit()
+        completed = repository.mark_completed(
+            assessment_id,
+            expected_result.model_dump(mode="json"),
+        )
+        repository.commit()
+
+    with postgres_session_factory() as session:
+        persisted = AssessmentRepository(session).get_by_id(assessment_id)
+
+    assert pending is not None
+    assert pending.assessment_id == assessment_id
+    assert isinstance(pending.assessment_id, UUID)
+    assert pending.status == AssessmentStatus.PENDING
+    assert pending.request_payload == request.model_dump(mode="json")
+    assert pending.created_at.utcoffset() is not None
+    assert pending.updated_at.utcoffset() is not None
+    assert processing is not None and processing.status == AssessmentStatus.PROCESSING
+    assert completed is not None and completed.status == AssessmentStatus.COMPLETED
+    assert completed.completed_at is not None
+    assert completed.completed_at.utcoffset() is not None
+    assert persisted is not None
+    assert persisted.status == AssessmentStatus.COMPLETED
+    assert AssessmentResult.model_validate(persisted.result_payload) == expected_result
+
+
+def test_repository_failed_state_round_trip(
+    postgres_session_factory: sessionmaker[Session],
+    synthetic_assessment_request: AssessmentRequest,
+) -> None:
+    """Persist a safe failed lifecycle state without a result or completion timestamp."""
+    with postgres_session_factory() as session:
+        repository = AssessmentRepository(session)
+        assessment_id = _create(repository, synthetic_assessment_request)
+        repository.mark_processing(assessment_id)
+        repository.commit()
+        repository.mark_failed(
+            assessment_id,
+            error_code="llm_provider_error",
+            error_message="AI assessment generation is temporarily unavailable. Please try again.",
+        )
+        repository.commit()
+
+    with postgres_session_factory() as session:
+        failed = AssessmentRepository(session).get_by_id(assessment_id)
+
+    assert failed is not None
+    assert failed.status == AssessmentStatus.FAILED
+    assert failed.result_payload is None
+    assert failed.error_code == "llm_provider_error"
+    assert failed.error_message == (
+        "AI assessment generation is temporarily unavailable. Please try again."
+    )
+    assert failed.completed_at is None
+    assert failed.updated_at.utcoffset() is not None
+
+
+def test_postgres_constraints_accept_independent_rows(
+    postgres_session_factory: sessionmaker[Session],
+    synthetic_assessment_request: AssessmentRequest,
+) -> None:
+    """Create unrelated records to demonstrate order-independent repository behavior."""
+    first_id = uuid4()
+    second_id = uuid4()
+    request_payload = synthetic_assessment_request.model_dump(mode="json")
+
+    with postgres_session_factory() as session:
+        repository = AssessmentRepository(session)
+        for assessment_id in (first_id, second_id):
+            repository.create(
+                assessment_id=assessment_id,
+                company_name=request_payload["company_name"],
+                industry=request_payload["industry"],
+                business_problem=request_payload["business_problem"],
+                request_payload=request_payload,
+            )
+        repository.commit()
+        stored_ids = set(session.scalars(select(AssessmentModel.id)).all())
+
+    assert stored_ids == {first_id, second_id}
+
+
+def test_api_create_and_get_with_mocked_openai(
+    postgres_database_url: str,
+    postgres_engine: Engine,
+    synthetic_assessment_request: AssessmentRequest,
+    synthetic_assessment_result: AssessmentResult,
+) -> None:
+    """Exercise POST and GET through FastAPI, real PostgreSQL, and a mocked provider."""
+    del postgres_engine
+    expected_result = synthetic_assessment_result
+    openai_client = Mock()
+    openai_client.responses.parse.return_value = SimpleNamespace(output_parsed=expected_result)
+    generator = OpenAIAssessmentGenerator(
+        model="gpt-4.1-mini",
+        client_provider=lambda: cast(OpenAI, openai_client),
+    )
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        APP_LOG_LEVEL="ERROR",
+        DATABASE_URL=postgres_database_url,
+        OPENAI_API_KEY=None,
+    )
+    application = create_app(settings)
+    application.dependency_overrides[get_assessment_generator] = lambda: generator
+
+    with TestClient(application) as client:
+        created_response = client.post(
+            "/api/v1/assessments",
+            json=synthetic_assessment_request.model_dump(mode="json"),
+        )
+        assert created_response.status_code == 200
+        created = AssessmentResponse.model_validate(created_response.json())
+
+        retrieved_response = client.get(f"/api/v1/assessments/{created.assessment_id}")
+        assert retrieved_response.status_code == 200
+        retrieved = AssessmentResponse.model_validate(retrieved_response.json())
+
+    assert created.status == AssessmentStatus.COMPLETED
+    assert created.result == expected_result
+    assert retrieved == created
+    openai_client.responses.parse.assert_called_once()

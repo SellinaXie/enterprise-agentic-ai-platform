@@ -155,10 +155,42 @@ alembic history
 ```
 
 Tests mock the OpenAI layer and never make a real provider request. Repository and API tests use
-an isolated SQLite database per test for speed and independence. SQLite does not validate
-PostgreSQL behavior completely, so the suite also renders the Alembic migration with the
-PostgreSQL dialect and asserts that UUID, JSONB, constraints, and indexes are present. Run the
-migration against a dedicated PostgreSQL test database before deployment.
+an isolated SQLite database per test for speed and independence. The default suite also renders
+the Alembic migration with the PostgreSQL dialect and asserts that UUID, JSONB, constraints, and
+indexes are present.
+
+### PostgreSQL integration tests
+
+Create a dedicated test database that is separate from the application database. The database
+name must contain `test`; `enterprise_ai_test` is one example:
+
+```bash
+createdb enterprise_ai_test
+export TEST_DATABASE_URL='postgresql+psycopg://enterprise_ai:local-password@localhost:5432/enterprise_ai_test'
+pytest -m postgres
+```
+
+The `postgres` tests are skipped cleanly when `TEST_DATABASE_URL` is unset. When it is set, the
+suite refuses non-PostgreSQL URLs, database names without `test`, PostgreSQL maintenance
+databases, production-looking database names, and any database with the same host, port, and name
+as `DATABASE_URL`.
+
+The PostgreSQL suite is intentionally destructive to the V2 schema in the confirmed test
+database: it runs `alembic downgrade base` followed by `alembic upgrade head`, and deletes rows
+from `assessments` before and after each test. Never set `TEST_DATABASE_URL` to a production,
+staging, development, or shared application database. Do not run multiple copies of this suite
+concurrently against the same test database.
+
+Run only the fast SQLite-backed tests with:
+
+```bash
+pytest -m "not postgres"
+```
+
+The live PostgreSQL checks cover the connection and server version, migration state and table
+creation, native UUID/JSONB/TIMESTAMPTZ behavior, repository lifecycle persistence, safe failed
+state persistence, and the POST/GET API flow with a mocked OpenAI client. All assessment inputs
+and results come from deterministic local synthetic fixtures; no external dataset is required.
 
 ## V2 scope
 
