@@ -6,9 +6,15 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.agents.architecture_agent import OpenAIArchitectureAgent
 from app.agents.assessment_agent import OpenAIAssessmentAgent
+from app.agents.evidence_agent import OpenAIEvidenceAgent
+from app.agents.risk_governance_agent import OpenAIRiskGovernanceAgent
+from app.agents.structured_output import OpenAIStructuredOutput
+from app.agents.synthesis_agent import OpenAISynthesisAgent
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
+from app.graph.multi_agent_workflow import MultiAgentAssessmentWorkflow
 from app.graph.workflow import AgenticAssessmentWorkflow
 from app.rag.embeddings import OpenAIEmbeddingsService
 from app.rag.ingestion import KnowledgeIngestionService
@@ -20,6 +26,7 @@ from app.repositories.knowledge_documents import KnowledgeDocumentRepository
 from app.services.assessments import AssessmentGenerator, AssessmentService
 from app.services.llm import OpenAIAssessmentGenerator, get_openai_client
 from app.tools.knowledge import build_knowledge_tool_registry
+from app.tools.permissions import AgentToolPermissions
 from app.tools.registry import ToolRegistry
 
 
@@ -137,7 +144,7 @@ def get_agentic_assessment_workflow(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AgenticAssessmentWorkflow | None:
     """Compile the V4 graph only when the explicit feature flag is enabled."""
-    if not settings.agentic_workflow_enabled:
+    if not settings.agentic_workflow_enabled or settings.multi_agent_workflow_enabled:
         return None
     return AgenticAssessmentWorkflow(
         agent=agent,
@@ -145,6 +152,78 @@ def get_agentic_assessment_workflow(
         max_steps=settings.agent_max_steps,
         max_tool_calls=settings.agent_max_tool_calls,
         recursion_limit=settings.langgraph_recursion_limit,
+    )
+
+
+def get_multi_agent_structured_output(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OpenAIStructuredOutput:
+    """Build the shared provider adapter; each specialist still has its own prompt and contract."""
+    return OpenAIStructuredOutput(
+        model=settings.openai_model,
+        store_responses=settings.openai_store_responses,
+        retry_limit=settings.specialist_retry_limit,
+        client_provider=partial(get_openai_client, settings),
+    )
+
+
+def get_evidence_agent(
+    tools: Annotated[ToolRegistry, Depends(get_agent_tool_registry)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OpenAIEvidenceAgent:
+    """Build the only V5 specialist allowed to receive tool schemas."""
+    return OpenAIEvidenceAgent(
+        model=settings.openai_model,
+        tools=tools,
+        permissions=AgentToolPermissions(),
+        max_steps=settings.evidence_agent_max_steps,
+        max_tool_calls=settings.evidence_agent_max_tool_calls,
+        store_responses=settings.openai_store_responses,
+        retry_limit=settings.specialist_retry_limit,
+        client_provider=partial(get_openai_client, settings),
+    )
+
+
+def get_architecture_agent(
+    structured: Annotated[OpenAIStructuredOutput, Depends(get_multi_agent_structured_output)],
+) -> OpenAIArchitectureAgent:
+    """Build the tool-free architecture specialist."""
+    return OpenAIArchitectureAgent(structured)
+
+
+def get_risk_governance_agent(
+    structured: Annotated[OpenAIStructuredOutput, Depends(get_multi_agent_structured_output)],
+) -> OpenAIRiskGovernanceAgent:
+    """Build the tool-free risk and governance specialist."""
+    return OpenAIRiskGovernanceAgent(structured)
+
+
+def get_synthesis_agent(
+    structured: Annotated[OpenAIStructuredOutput, Depends(get_multi_agent_structured_output)],
+) -> OpenAISynthesisAgent:
+    """Build the tool-free final synthesis specialist."""
+    return OpenAISynthesisAgent(structured)
+
+
+def get_multi_agent_assessment_workflow(
+    evidence: Annotated[OpenAIEvidenceAgent, Depends(get_evidence_agent)],
+    architecture: Annotated[OpenAIArchitectureAgent, Depends(get_architecture_agent)],
+    risk_governance: Annotated[
+        OpenAIRiskGovernanceAgent,
+        Depends(get_risk_governance_agent),
+    ],
+    synthesis: Annotated[OpenAISynthesisAgent, Depends(get_synthesis_agent)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MultiAgentAssessmentWorkflow | None:
+    """Compile V5 only when its higher-precedence feature flag is enabled."""
+    if not settings.multi_agent_workflow_enabled:
+        return None
+    return MultiAgentAssessmentWorkflow(
+        evidence=evidence,
+        architecture=architecture,
+        risk_governance=risk_governance,
+        synthesis=synthesis,
+        max_failures=settings.multi_agent_max_failures,
     )
 
 
@@ -156,6 +235,10 @@ def get_assessment_service(
         AgenticAssessmentWorkflow | None,
         Depends(get_agentic_assessment_workflow),
     ],
+    multi_agent_workflow: Annotated[
+        MultiAgentAssessmentWorkflow | None,
+        Depends(get_multi_agent_assessment_workflow),
+    ],
 ) -> AssessmentService:
     """Compose the service from provider and persistence boundaries."""
     return AssessmentService(
@@ -163,4 +246,5 @@ def get_assessment_service(
         repository,
         rag_service,
         agentic_workflow=agentic_workflow,
+        multi_agent_workflow=multi_agent_workflow,
     )

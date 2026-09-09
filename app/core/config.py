@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     agent_max_tool_calls: int = Field(default=5, ge=1, le=50)
     langgraph_recursion_limit: int = Field(default=25, ge=1, le=1_000)
 
+    multi_agent_workflow_enabled: bool = False
+    evidence_agent_max_steps: int = Field(default=4, ge=1, le=50)
+    evidence_agent_max_tool_calls: int = Field(default=4, ge=1, le=50)
+    multi_agent_max_failures: int = Field(default=2, ge=0, le=2)
+    specialist_retry_limit: int = Field(default=1, ge=0, le=3)
+
     @model_validator(mode="after")
     def validate_chunk_settings(self) -> Self:
         """Require overlap to be smaller than the deterministic chunk size."""

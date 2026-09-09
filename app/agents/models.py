@@ -84,8 +84,16 @@ class AssessmentExecutionMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    execution_mode: Literal["agentic"] = "agentic"
+    execution_mode: Literal["single_agent", "agentic"] = "single_agent"
     steps_used: int = Field(ge=0)
     tools_used: list[str]
     termination_reason: AgentTerminationReason
     trace: list[AgentTraceEvent]
+
+
+class DeterministicExecutionMetadata(BaseModel):
+    """Minimal marker for the unchanged deterministic V3 execution path."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    execution_mode: Literal["deterministic"] = "deterministic"

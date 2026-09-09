@@ -7,7 +7,8 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from app.agents.models import AssessmentExecutionMetadata
+from app.agents.models import AssessmentExecutionMetadata, DeterministicExecutionMetadata
+from app.agents.multi_agent_models import MultiAgentExecutionMetadata
 from app.core.exceptions import (
     ApplicationError,
     AssessmentGenerationError,
@@ -80,16 +81,32 @@ class AssessmentRAGProtocol(Protocol):
     def prepare(self, request: AssessmentRequest) -> RAGPreparation: ...
 
 
+ExecutionMetadata = (
+    DeterministicExecutionMetadata | AssessmentExecutionMetadata | MultiAgentExecutionMetadata
+)
+
+
 class AgentWorkflowOutput(Protocol):
     """Provider-neutral result returned by an agentic workflow."""
 
     result: AssessmentResult
     evidence: tuple[RetrievedEvidence, ...]
-    execution: AssessmentExecutionMetadata
+    execution: AssessmentExecutionMetadata | MultiAgentExecutionMetadata
 
 
 class AgenticAssessmentWorkflowProtocol(Protocol):
     """Optional V4 workflow invoked only behind its feature flag."""
+
+    def run(
+        self,
+        *,
+        assessment_id: str,
+        request: AssessmentRequest,
+    ) -> AgentWorkflowOutput: ...
+
+
+class MultiAgentAssessmentWorkflowProtocol(Protocol):
+    """Optional V5 workflow, which has precedence over the V4 path."""
 
     def run(
         self,
@@ -108,11 +125,13 @@ class AssessmentService:
         repository: AssessmentRepositoryProtocol,
         rag_service: AssessmentRAGProtocol | None = None,
         agentic_workflow: AgenticAssessmentWorkflowProtocol | None = None,
+        multi_agent_workflow: MultiAgentAssessmentWorkflowProtocol | None = None,
     ) -> None:
         self._generator = generator
         self._repository = repository
         self._rag_service = rag_service
         self._agentic_workflow = agentic_workflow
+        self._multi_agent_workflow = multi_agent_workflow
 
     def generate_assessment(self, request: AssessmentRequest) -> AssessmentResponse:
         """Persist lifecycle state around synchronous structured generation."""
@@ -146,9 +165,17 @@ class AssessmentService:
         logger.info("assessment_generation_started", extra=log_context)
 
         evidence: tuple[RetrievedEvidence, ...] = ()
-        execution: AssessmentExecutionMetadata | None = None
+        execution: ExecutionMetadata = DeterministicExecutionMetadata()
         try:
-            if self._agentic_workflow is not None:
+            if self._multi_agent_workflow is not None:
+                workflow_result = self._multi_agent_workflow.run(
+                    assessment_id=str(assessment_id),
+                    request=request,
+                )
+                result = workflow_result.result
+                evidence = workflow_result.evidence
+                execution = workflow_result.execution
+            elif self._agentic_workflow is not None:
                 workflow_result = self._agentic_workflow.run(
                     assessment_id=str(assessment_id),
                     request=request,
@@ -198,17 +225,11 @@ class AssessmentService:
             raise unexpected_error from exc
 
         try:
-            if execution is None:
-                completed_record = self._repository.mark_completed(
-                    assessment_id,
-                    result.model_dump(mode="json"),
-                )
-            else:
-                completed_record = self._repository.mark_completed(
-                    assessment_id,
-                    result.model_dump(mode="json"),
-                    execution.model_dump(mode="json"),
-                )
+            completed_record = self._repository.mark_completed(
+                assessment_id,
+                result.model_dump(mode="json"),
+                execution.model_dump(mode="json"),
+            )
             if completed_record is None:
                 raise PersistenceError
             self._repository.commit()
@@ -318,11 +339,7 @@ class AssessmentService:
                 if record.result_payload is not None
                 else None
             )
-            execution = (
-                AssessmentExecutionMetadata.model_validate(record.execution_metadata)
-                if record.execution_metadata is not None
-                else None
-            )
+            execution = AssessmentService._parse_execution_metadata(record.execution_metadata)
         except ValidationError as exc:
             raise PersistenceError from exc
 
@@ -341,3 +358,15 @@ class AssessmentService:
             updated_at=record.updated_at,
             completed_at=record.completed_at,
         )
+
+    @staticmethod
+    def _parse_execution_metadata(payload: dict[str, Any] | None) -> ExecutionMetadata | None:
+        """Read new mode markers plus historical nullable and V4 `agentic` metadata."""
+        if payload is None:
+            return None
+        mode = payload.get("execution_mode")
+        if mode == "deterministic":
+            return DeterministicExecutionMetadata.model_validate(payload)
+        if mode == "multi_agent":
+            return MultiAgentExecutionMetadata.model_validate(payload)
+        return AssessmentExecutionMetadata.model_validate(payload)

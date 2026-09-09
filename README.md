@@ -1,8 +1,115 @@
 # Enterprise AI Transformation Advisor
 
-Production-minded V4 backend for grounded enterprise AI assessments. V4 preserves the V1
-schema-constrained OpenAI assessment flow, V2 PostgreSQL application-state persistence, and V3
-pgvector RAG layer, then adds an optional controlled single-agent LangGraph workflow.
+Production-minded V5 backend for grounded enterprise AI assessments. V5 preserves the V1
+schema-constrained OpenAI assessment flow, V2 PostgreSQL application-state persistence, V3
+pgvector RAG, and V4 controlled single-agent workflow, then adds an optional four-agent LangGraph
+workflow with typed handoffs, isolated context, code-enforced tool permissions, and deterministic
+partial-failure behavior.
+
+## V5 capability
+
+V5 separates four genuinely different reasoning responsibilities. It does not add agents merely
+to increase agent count: evidence retrieval has a distinct trust and tool boundary; solution
+architecture and risk/governance need independent analysis; and final synthesis must reconcile
+those typed conclusions into the existing business contract. LangGraph is the orchestrator—there
+is no fifth LLM supervisor and agents do not exchange free-form messages.
+
+```text
+Assessment Service
+        │
+        ▼
+     LangGraph
+        │
+  initialize
+        │
+ Evidence Agent ── read-only knowledge tools ── V3 retrieval/repositories
+        │
+        ├───────────────────────┐
+        ▼                       ▼
+Architecture Agent      Risk & Governance Agent
+      (no tools)                (no tools)
+        └───────────┬───────────┘
+                    ▼
+             Synthesis Agent
+                 (no tools)
+                    │
+                 validate
+                    │
+                    ▼
+       Existing AssessmentResult + safe execution metadata
+```
+
+The `architecture` and `risk_governance` nodes are true parallel LangGraph branches after evidence
+is complete. A list-form fan-in edge waits for both branches and schedules `synthesis` once. The
+branches write to separate typed state keys, so convergence never depends on completion order.
+
+### Four specialist contracts
+
+- **Evidence Agent** receives the assessment, the two allowed tool definitions, and only evidence
+  it has observed. It may run a bounded one-tool-per-step loop and returns `EvidenceBrief` with
+  evidence items, gaps, qualitative confidence, and observed document/chunk identifiers. It does
+  not design or produce the final assessment.
+- **Solution Architecture Agent** receives only the assessment and typed `EvidenceBrief`. It has no
+  tools and returns `ArchitectureRecommendation`: pattern, components, data flow, integrations,
+  complexity, assumptions, alternatives, simplicity rationale, and confidence.
+- **Risk & Governance Agent** receives only the assessment and typed `EvidenceBrief`, independently
+  of the architecture branch. It has no tools and returns `RiskGovernanceReview`: risk level,
+  findings, controls, human oversight, auditability, unresolved questions, and confidence.
+- **Synthesis Agent** receives the assessment, typed specialist outputs, explicit missing-output
+  facts, and allowed evidence provenance. It has no tools, reconciles disagreement in favor of the
+  safer bounded recommendation under uncertainty, and returns the unchanged `AssessmentResult`.
+
+All specialist business handoffs are closed Pydantic schemas. Each OpenAI specialist output uses
+the Responses API structured-output parser; the small configured retry applies to provider or
+schema failure, not an open-ended self-repair loop. Prompts and raw provider conversations are not
+passed between agents.
+
+### Execution modes and precedence
+
+```text
+MULTI_AGENT_WORKFLOW_ENABLED=false + AGENTIC_WORKFLOW_ENABLED=false
+    → deterministic V3 mode
+
+MULTI_AGENT_WORKFLOW_ENABLED=false + AGENTIC_WORKFLOW_ENABLED=true
+    → V4 single-agent mode
+
+MULTI_AGENT_WORKFLOW_ENABLED=true
+    → V5 multi-agent mode, regardless of the V4 flag
+```
+
+Both workflow flags default to `false`; V5 is never mandatory. New execution metadata uses
+`deterministic`, `single_agent`, or `multi_agent`. Historical V4 JSON containing `agentic` and
+historical rows with no execution metadata remain readable.
+
+### Failure and degraded-mode policy
+
+- Evidence failure produces an explicit low-confidence assessment-only `EvidenceBrief`; both
+  downstream specialists can continue.
+- Architecture failure leaves that handoff absent. Risk review and synthesis may continue without
+  inventing architecture analysis.
+- Risk/governance failure leaves that handoff absent, marks the run degraded, lowers the visible
+  governance confidence through a limitation, and does not silently claim a review occurred.
+- Synthesis is required. Its failure fails the assessment unless the bounded structured-output
+  retry succeeds.
+- Successful completion requires synthesis and at least one available specialist analysis. The
+  configured failure budget can be stricter but can never permit an empty synthesis.
+
+Degradation reasons are added to result information gaps and safe execution metadata. Metadata
+includes exactly the four agents, statuses, best-effort durations, safe error codes, unique tool
+names, tool-call count, termination, and compact events. It excludes chain-of-thought, prompts,
+provider messages, tool arguments, API keys, embeddings, and full documents.
+
+### Tool security and evidence integrity
+
+V5 reuses the V4 registry, strict argument schemas, validation, normalized observations, and
+per-execution cache. A separate code permission layer exposes `search_knowledge` and
+`get_knowledge_document` only to the Evidence Agent. Architecture, Risk/Governance, and Synthesis
+receive no tool schemas; direct unauthorized calls are rejected before the registered handler can
+run and produce only a safe `unauthorized_tool` observation.
+
+The Evidence Agent normalizes its provenance to identifiers actually observed from tool results.
+Final service-level citation sanitization remains authoritative and removes duplicate or invented
+document/chunk references before persistence.
 
 ## V4 capability
 
@@ -34,7 +141,7 @@ routing sends only an allowlisted agent decision to the matching node. Every too
 returns to the same reasoning agent. Max-step and max-tool-call checks force deterministic
 synthesis with available context; an explicit agent failure terminates safely.
 
-### Deterministic versus agentic execution
+### V4 deterministic versus single-agent execution
 
 ```dotenv
 AGENTIC_WORKFLOW_ENABLED=false
@@ -44,8 +151,9 @@ AGENTIC_WORKFLOW_ENABLED=true
 # V4 LangGraph single-agent reason/act/observe/synthesize behavior
 ```
 
-The default is `false`. `RAG_ENABLED` continues to control retrieval in deterministic mode. In
-agentic mode the agent chooses whether to invoke retrieval through its tool registry. Both modes
+The default is `false` when V5 is also disabled. `RAG_ENABLED` continues to control retrieval in
+deterministic mode. In single-agent mode the agent chooses whether to invoke retrieval through its
+tool registry. Both modes
 reuse the same V3 retrieval, evidence, prompt, structured result, and citation-sanitization logic.
 
 ### Approved tools
@@ -62,16 +170,14 @@ invalid arguments are rejected before implementation code runs. Identical valid 
 execution reuse an in-memory result cache and still count toward the finite tool-call limit.
 
 No write, shell, arbitrary file, arbitrary SQL, arbitrary network, code-execution, or side-effect
-tool exists. V4 has exactly one agent and adds no supervisor, worker agents, multi-agent
-orchestration, MCP, LangSmith, knowledge graph, or GraphRAG capability.
+tool exists. The preserved V4 path still has exactly one agent and no supervisor/worker pattern.
 
 ### Safe execution trace
 
-Agentic assessments persist one compact JSONB execution summary with `execution_mode`,
+Single-agent assessments persist one compact JSONB execution summary with `execution_mode`,
 `steps_used`, unique `tools_used`, `termination_reason`, and timestamped safe events. Events record
 the transition and outcome (for example, tool requested/completed/failed), not model reasoning,
-full prompts, tool arguments, secrets, embeddings, or complete documents. Deterministic V3 results
-leave this optional field empty.
+full prompts, tool arguments, secrets, embeddings, or complete documents.
 
 ## V3 capability
 
@@ -100,7 +206,7 @@ small explicit components.
 The two persistence responsibilities remain separate:
 
 - `assessments` is application state: validated requests, lifecycle status, structured result or
-  safe failure, timestamps, and an optional compact V4 agent execution summary.
+  safe failure, timestamps, and compact execution-mode metadata for new completed assessments.
 - `knowledge_documents` and `knowledge_chunks` are V3 retrieval knowledge: normalized source
   text, provenance metadata, deterministic chunks, embeddings, and chunk metadata.
 
@@ -166,6 +272,12 @@ AGENTIC_WORKFLOW_ENABLED=false
 AGENT_MAX_STEPS=5
 AGENT_MAX_TOOL_CALLS=5
 LANGGRAPH_RECURSION_LIMIT=25
+
+MULTI_AGENT_WORKFLOW_ENABLED=false
+EVIDENCE_AGENT_MAX_STEPS=4
+EVIDENCE_AGENT_MAX_TOOL_CALLS=4
+MULTI_AGENT_MAX_FAILURES=2
+SPECIALIST_RETRY_LIMIT=1
 ```
 
 - `text-embedding-3-small` is requested at 1,536 dimensions. The typed setting, ORM vector type,
@@ -183,6 +295,12 @@ LANGGRAPH_RECURSION_LIMIT=25
 - `AGENT_MAX_TOOL_CALLS` bounds all tool requests, including cache hits, and defaults to five.
 - `LANGGRAPH_RECURSION_LIMIT` is an outer graph guard. When agentic mode is enabled it must be at
   least `2 * AGENT_MAX_STEPS + 3`; the default of 25 covers the default workflow limits.
+- `EVIDENCE_AGENT_MAX_STEPS` and `EVIDENCE_AGENT_MAX_TOOL_CALLS` independently bound the only V5
+  tool loop. Cache hits still count as calls.
+- `MULTI_AGENT_MAX_FAILURES` is enforced before synthesis and defaults to two; synthesis still
+  requires at least one successfully available specialist analysis.
+- `SPECIALIST_RETRY_LIMIT=1` permits one retry after the initial schema-constrained specialist
+  request. It does not create an agent-directed repair loop.
 
 ## Ingestion
 
@@ -246,7 +364,7 @@ failed assessment state; credentials, raw provider failures, embeddings, documen
 RAG contexts are not logged.
 
 `GET /api/v1/assessments/{assessment_id}` continues to return the persisted request, structured
-result or safe failure, lifecycle timestamps, and optional safe V4 execution metadata.
+result or safe failure, lifecycle timestamps, and safe compatible execution metadata when present.
 
 ## Database schema and migration
 
@@ -265,6 +383,8 @@ PostgreSQL extensions are cluster-level capabilities and may be shared by unrela
 V4 revision `20260909_0003` follows the unmodified V3 migration and adds only nullable
 `assessments.execution_metadata` JSONB storage. It is nullable so deterministic and historical
 assessment records retain their existing behavior. Its downgrade removes only that column.
+
+V5 reuses that JSONB column and does not add a migration or agent-run table.
 
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
@@ -286,7 +406,11 @@ vectors, and mocked OpenAI clients. In addition to V1-V3 coverage, V4 tests cove
 prompt construction, strict schemas, the allowlist, unknown and invalid tool calls, document lookup,
 empty/error retrieval, duplicate caching, routing, all graph paths, finite termination, safe traces,
 service persistence, and POST/GET round trips through the real graph. No external dataset or
-provider network call is required.
+provider network call is required. V5 tests add specialist contract validation, strict context
+isolation, tool permissions, bounded Evidence Agent behavior, all success/degraded/failure graph
+paths, native parallel fan-out with deterministic fan-in, result/citation safeguards, execution
+mode precedence, JSONB metadata persistence, and POST/GET round trips. OpenAI is mocked at the
+Responses API boundary.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -314,10 +438,10 @@ Do not run multiple test processes against the same test database. Run only fast
 pytest -m "not postgres"
 ```
 
-## V4 scope boundary
+## V5 scope boundary
 
-V4 activates the prior LangGraph scaffold only for the optional controlled single-agent workflow.
-It is not a general agent platform and does not add multiple agents, a supervisor/worker pattern,
-multi-agent orchestration, arbitrary tools, MCP, knowledge graphs, GraphRAG, LangSmith, an eval
-framework, UI, authentication, deployment, Docker, file parsing, or OCR. Those concerns remain
-outside V4; V5 has not been started.
+V5 is a controlled assessment workflow, not a general autonomous-agent platform. It adds no LLM
+supervisor, arbitrary tool, external side effect, human-in-the-loop pause/resume infrastructure,
+MCP, LangSmith integration, knowledge graph, GraphRAG, graph database, entity/relationship
+extraction, eval framework, UI, authentication, deployment, Docker, file parsing, or OCR. Those
+concerns remain intentionally deferred; V6 has not been started.

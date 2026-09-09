@@ -1,6 +1,90 @@
 """Reusable test data builders."""
 
+from uuid import UUID
+
+from app.agents.multi_agent_models import (
+    ArchitectureRecommendation,
+    EvidenceBrief,
+    EvidenceItem,
+    GovernanceOversight,
+    GovernanceRisk,
+    RiskGovernanceReview,
+    SpecialistConfidence,
+)
 from app.schemas.assessment import AssessmentResult
+
+
+def build_evidence_brief(
+    *,
+    document_id: UUID | None = None,
+    chunk_id: UUID | None = None,
+) -> EvidenceBrief:
+    """Return a synthetic typed evidence handoff with optional provenance."""
+    evidence_items = []
+    if document_id is not None and chunk_id is not None:
+        evidence_items.append(
+            EvidenceItem(
+                claim="Authorized staff retain final approval for high-impact recommendations.",
+                supporting_document_ids=[document_id],
+                supporting_chunk_ids=[chunk_id],
+                relevance="Directly defines the required human decision boundary.",
+                notes="Synthetic test evidence.",
+            )
+        )
+    return EvidenceBrief(
+        summary=(
+            "A synthetic governance source requires human approval."
+            if evidence_items
+            else "No relevant external evidence was retrieved."
+        ),
+        evidence_items=evidence_items,
+        evidence_gaps=[] if evidence_items else ["No external evidence was available."],
+        confidence=SpecialistConfidence.HIGH if evidence_items else SpecialistConfidence.LOW,
+        retrieved_document_ids=[document_id] if document_id is not None else [],
+        retrieved_chunk_ids=[chunk_id] if chunk_id is not None else [],
+    )
+
+
+def build_architecture_recommendation() -> ArchitectureRecommendation:
+    """Return a representative typed architecture handoff."""
+    return ArchitectureRecommendation(
+        recommended_pattern="llm_assisted_workflow",
+        architecture_summary="A bounded RAG assistant prepares review packages for analysts.",
+        components=["Existing workflow", "Retrieval service", "Structured LLM generation"],
+        data_flow=["Request", "Retrieve policy evidence", "Draft", "Human approval"],
+        integrations=["Existing case-management API"],
+        complexity="medium",
+        implementation_assumptions=["A case-management API is available."],
+        alternatives_considered=["Deterministic document templates"],
+        why_simpler_options_are_or_are_not_sufficient=(
+            "Templates do not cover variable evidence, while autonomous action is unnecessary."
+        ),
+        confidence="high",
+    )
+
+
+def build_risk_governance_review() -> RiskGovernanceReview:
+    """Return a representative typed risk/governance handoff."""
+    return RiskGovernanceReview(
+        overall_risk="high",
+        risks=[
+            GovernanceRisk(
+                category="compliance",
+                description="A generated summary could omit decision-relevant evidence.",
+                severity="high",
+                mitigation="Require human review with source links before any decision.",
+            )
+        ],
+        required_controls=["Role-based access", "Source-linked analyst review"],
+        human_oversight=GovernanceOversight(
+            review_required=True,
+            decisions_requiring_review=["Credit and compliance decisions"],
+            rationale="The workflow affects regulated lending decisions.",
+        ),
+        auditability_requirements=["Log source references and reviewer approval"],
+        unresolved_questions=["Applicable retention policy"],
+        confidence="high",
+    )
 
 
 def build_assessment_result() -> AssessmentResult:

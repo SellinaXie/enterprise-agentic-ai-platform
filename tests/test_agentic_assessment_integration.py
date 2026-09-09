@@ -127,7 +127,7 @@ def test_agentic_service_persists_result_citations_and_execution_metadata(
     persisted = repository.get_by_id(response.assessment_id)
 
     assert response.execution is not None
-    assert response.execution.execution_mode == "agentic"
+    assert response.execution.execution_mode == "single_agent"
     assert response.execution.steps_used == 2
     assert response.execution.tools_used == ["search_knowledge"]
     assert response.result is not None
@@ -149,7 +149,8 @@ def test_disabled_agentic_path_preserves_deterministic_v3_behavior(db_session: S
 
     response = service.generate_assessment(_request())
 
-    assert response.execution is None
+    assert response.execution is not None
+    assert response.execution.execution_mode == "deterministic"
     assert response.result == build_assessment_result()
     generator.generate.assert_called_once()
 

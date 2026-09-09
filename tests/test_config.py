@@ -29,6 +29,11 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.agent_max_steps == 5
     assert settings.agent_max_tool_calls == 5
     assert settings.langgraph_recursion_limit == 25
+    assert settings.multi_agent_workflow_enabled is False
+    assert settings.evidence_agent_max_steps == 4
+    assert settings.evidence_agent_max_tool_calls == 4
+    assert settings.multi_agent_max_failures == 2
+    assert settings.specialist_retry_limit == 1
 
 
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:
