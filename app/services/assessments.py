@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
+from app.agents.models import AssessmentExecutionMetadata
 from app.core.exceptions import (
     ApplicationError,
     AssessmentGenerationError,
@@ -57,6 +58,7 @@ class AssessmentRepositoryProtocol(Protocol):
         self,
         assessment_id: UUID,
         result_payload: dict[str, Any],
+        execution_metadata: dict[str, Any] | None = None,
     ) -> PersistedAssessment | None: ...
 
     def mark_failed(
@@ -78,6 +80,25 @@ class AssessmentRAGProtocol(Protocol):
     def prepare(self, request: AssessmentRequest) -> RAGPreparation: ...
 
 
+class AgentWorkflowOutput(Protocol):
+    """Provider-neutral result returned by an agentic workflow."""
+
+    result: AssessmentResult
+    evidence: tuple[RetrievedEvidence, ...]
+    execution: AssessmentExecutionMetadata
+
+
+class AgenticAssessmentWorkflowProtocol(Protocol):
+    """Optional V4 workflow invoked only behind its feature flag."""
+
+    def run(
+        self,
+        *,
+        assessment_id: str,
+        request: AssessmentRequest,
+    ) -> AgentWorkflowOutput: ...
+
+
 class AssessmentService:
     """Coordinate generation and explicit persistence transaction boundaries."""
 
@@ -86,10 +107,12 @@ class AssessmentService:
         generator: AssessmentGenerator,
         repository: AssessmentRepositoryProtocol,
         rag_service: AssessmentRAGProtocol | None = None,
+        agentic_workflow: AgenticAssessmentWorkflowProtocol | None = None,
     ) -> None:
         self._generator = generator
         self._repository = repository
         self._rag_service = rag_service
+        self._agentic_workflow = agentic_workflow
 
     def generate_assessment(self, request: AssessmentRequest) -> AssessmentResponse:
         """Persist lifecycle state around synchronous structured generation."""
@@ -123,18 +146,28 @@ class AssessmentService:
         logger.info("assessment_generation_started", extra=log_context)
 
         evidence: tuple[RetrievedEvidence, ...] = ()
+        execution: AssessmentExecutionMetadata | None = None
         try:
-            rag_context = None
-            if self._rag_service is not None:
-                preparation = self._rag_service.prepare(request)
-                evidence = preparation.evidence
-                rag_context = preparation.context
-            prompt = (
-                build_assessment_prompt(request, rag_context)
-                if rag_context is not None
-                else build_assessment_prompt(request)
-            )
-            result = self._generator.generate(prompt)
+            if self._agentic_workflow is not None:
+                workflow_result = self._agentic_workflow.run(
+                    assessment_id=str(assessment_id),
+                    request=request,
+                )
+                result = workflow_result.result
+                evidence = workflow_result.evidence
+                execution = workflow_result.execution
+            else:
+                rag_context = None
+                if self._rag_service is not None:
+                    preparation = self._rag_service.prepare(request)
+                    evidence = preparation.evidence
+                    rag_context = preparation.context
+                prompt = (
+                    build_assessment_prompt(request, rag_context)
+                    if rag_context is not None
+                    else build_assessment_prompt(request)
+                )
+                result = self._generator.generate(prompt)
             result = self._apply_grounding_metadata(result, evidence)
         except ApplicationError as exc:
             self._persist_failure(
@@ -165,10 +198,17 @@ class AssessmentService:
             raise unexpected_error from exc
 
         try:
-            completed_record = self._repository.mark_completed(
-                assessment_id,
-                result.model_dump(mode="json"),
-            )
+            if execution is None:
+                completed_record = self._repository.mark_completed(
+                    assessment_id,
+                    result.model_dump(mode="json"),
+                )
+            else:
+                completed_record = self._repository.mark_completed(
+                    assessment_id,
+                    result.model_dump(mode="json"),
+                    execution.model_dump(mode="json"),
+                )
             if completed_record is None:
                 raise PersistenceError
             self._repository.commit()
@@ -278,6 +318,11 @@ class AssessmentService:
                 if record.result_payload is not None
                 else None
             )
+            execution = (
+                AssessmentExecutionMetadata.model_validate(record.execution_metadata)
+                if record.execution_metadata is not None
+                else None
+            )
         except ValidationError as exc:
             raise PersistenceError from exc
 
@@ -290,6 +335,7 @@ class AssessmentService:
             status=record.status,
             input=request,
             result=result,
+            execution=execution,
             error=error,
             created_at=record.created_at,
             updated_at=record.updated_at,

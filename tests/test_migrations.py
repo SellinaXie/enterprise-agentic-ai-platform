@@ -18,7 +18,7 @@ def alembic_config(output_buffer: StringIO | None = None) -> Config:
 def test_alembic_has_one_linear_head() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
-    assert script.get_heads() == ["20260909_0002"]
+    assert script.get_heads() == ["20260909_0003"]
     assert script.get_base() == "20260909_0001"
 
 
@@ -43,6 +43,19 @@ def test_initial_migration_renders_postgresql_schema(monkeypatch: MonkeyPatch) -
     assert "VECTOR(1536)" in sql
     assert "USING hnsw" in sql
     assert "vector_cosine_ops" in sql
+    assert "ADD COLUMN execution_metadata JSONB" in sql
+
+
+def test_v4_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:
+    output = StringIO()
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://migration_test:placeholder@localhost/migration_test",
+    )
+
+    command.downgrade(alembic_config(output), "20260909_0003:20260909_0002", sql=True)
+
+    assert "DROP COLUMN execution_metadata" in output.getvalue()
 
 
 def test_v3_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:

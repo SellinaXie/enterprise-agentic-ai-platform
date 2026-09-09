@@ -31,6 +31,9 @@ def _to_record(model: AssessmentModel) -> PersistedAssessment:
         status=model.status,
         request_payload=dict(model.request_payload),
         result_payload=dict(model.result_payload) if model.result_payload is not None else None,
+        execution_metadata=(
+            dict(model.execution_metadata) if model.execution_metadata is not None else None
+        ),
         error_code=model.error_code,
         error_message=model.error_message,
         created_at=created_at,
@@ -95,6 +98,7 @@ class AssessmentRepository:
         self,
         assessment_id: UUID,
         result_payload: Mapping[str, Any],
+        execution_metadata: Mapping[str, Any] | None = None,
     ) -> PersistedAssessment | None:
         """Persist a validated result and mark the assessment completed."""
         model = self._session.get(AssessmentModel, assessment_id)
@@ -103,6 +107,9 @@ class AssessmentRepository:
         now = self._clock()
         model.status = AssessmentStatus.COMPLETED
         model.result_payload = dict(result_payload)
+        model.execution_metadata = (
+            dict(execution_metadata) if execution_metadata is not None else None
+        )
         model.error_code = None
         model.error_message = None
         model.completed_at = now
@@ -123,6 +130,7 @@ class AssessmentRepository:
             return None
         model.status = AssessmentStatus.FAILED
         model.result_payload = None
+        model.execution_metadata = None
         model.error_code = error_code[:100]
         model.error_message = error_message[:500]
         model.completed_at = None

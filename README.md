@@ -1,8 +1,77 @@
 # Enterprise AI Transformation Advisor
 
-Production-minded V3 backend for grounded enterprise AI assessments. V3 preserves the V1
-schema-constrained OpenAI assessment flow and V2 PostgreSQL application-state persistence, then
-adds a logically separate pgvector knowledge layer for retrieval-augmented generation (RAG).
+Production-minded V4 backend for grounded enterprise AI assessments. V4 preserves the V1
+schema-constrained OpenAI assessment flow, V2 PostgreSQL application-state persistence, and V3
+pgvector RAG layer, then adds an optional controlled single-agent LangGraph workflow.
+
+## V4 capability
+
+V4 can route an assessment through one bounded reasoning agent that decides whether existing
+context is sufficient, calls one approved read-only knowledge tool at a time when useful, observes
+the result, and stops for schema-constrained synthesis. The graph records safe decision/action/
+observation events, never private chain-of-thought.
+
+```text
+Assessment Service
+        │
+        ├── AGENTIC_WORKFLOW_ENABLED=false ──→ deterministic V3 RAG flow
+        │
+        └── AGENTIC_WORKFLOW_ENABLED=true
+                         │
+                         ▼
+                     LangGraph
+                         │
+             Reason → Tool? → Observe
+                │                 │
+                └──── Synthesize ←┘
+                         │
+                         ▼
+              Existing AssessmentResult
+```
+
+The graph has four explicit nodes: `reason`, `execute_tool`, `synthesize`, and `fail`. Conditional
+routing sends only an allowlisted agent decision to the matching node. Every tool observation
+returns to the same reasoning agent. Max-step and max-tool-call checks force deterministic
+synthesis with available context; an explicit agent failure terminates safely.
+
+### Deterministic versus agentic execution
+
+```dotenv
+AGENTIC_WORKFLOW_ENABLED=false
+# Existing V3 deterministic request/retrieval/synthesis behavior
+
+AGENTIC_WORKFLOW_ENABLED=true
+# V4 LangGraph single-agent reason/act/observe/synthesize behavior
+```
+
+The default is `false`. `RAG_ENABLED` continues to control retrieval in deterministic mode. In
+agentic mode the agent chooses whether to invoke retrieval through its tool registry. Both modes
+reuse the same V3 retrieval, evidence, prompt, structured result, and citation-sanitization logic.
+
+### Approved tools
+
+- `search_knowledge(query: str, top_k: int)` calls the V3 `RetrievalService` and returns ranked
+  evidence with document ID, chunk ID, title, content, similarity, source type, and metadata.
+- `get_knowledge_document(document_id: UUID)` calls the existing read-only document repository
+  and returns document provenance plus an excerpt capped at 12,000 characters. A missing document
+  is a valid empty observation.
+
+The registry is a static code allowlist. Arguments are validated by closed Pydantic schemas and
+are sent to OpenAI as strict function tools with parallel tool calls disabled. Unknown tools and
+invalid arguments are rejected before implementation code runs. Identical valid calls in one graph
+execution reuse an in-memory result cache and still count toward the finite tool-call limit.
+
+No write, shell, arbitrary file, arbitrary SQL, arbitrary network, code-execution, or side-effect
+tool exists. V4 has exactly one agent and adds no supervisor, worker agents, multi-agent
+orchestration, MCP, LangSmith, knowledge graph, or GraphRAG capability.
+
+### Safe execution trace
+
+Agentic assessments persist one compact JSONB execution summary with `execution_mode`,
+`steps_used`, unique `tools_used`, `termination_reason`, and timestamped safe events. Events record
+the transition and outcome (for example, tool requested/completed/failed), not model reasoning,
+full prompts, tool arguments, secrets, embeddings, or complete documents. Deterministic V3 results
+leave this optional field empty.
 
 ## V3 capability
 
@@ -30,8 +99,8 @@ small explicit components.
 
 The two persistence responsibilities remain separate:
 
-- `assessments` is V2 application state: validated requests, lifecycle status, structured result
-  or safe failure, and timestamps.
+- `assessments` is application state: validated requests, lifecycle status, structured result or
+  safe failure, timestamps, and an optional compact V4 agent execution summary.
 - `knowledge_documents` and `knowledge_chunks` are V3 retrieval knowledge: normalized source
   text, provenance metadata, deterministic chunks, embeddings, and chunk metadata.
 
@@ -92,6 +161,11 @@ RAG_CHUNK_SIZE=1200
 RAG_CHUNK_OVERLAP=200
 RAG_RETRIEVAL_TOP_K=5
 RAG_SIMILARITY_THRESHOLD=0.35
+
+AGENTIC_WORKFLOW_ENABLED=false
+AGENT_MAX_STEPS=5
+AGENT_MAX_TOOL_CALLS=5
+LANGGRAPH_RECURSION_LIMIT=25
 ```
 
 - `text-embedding-3-small` is requested at 1,536 dimensions. The typed setting, ORM vector type,
@@ -105,6 +179,10 @@ RAG_SIMILARITY_THRESHOLD=0.35
   knowledge has been ingested. Set it to `true` to add retrieval to assessment generation.
 - When retrieval returns no qualifying evidence, assessment generation continues from the request
   and explicitly records `external_evidence_status=not_retrieved` with no source references.
+- `AGENT_MAX_STEPS` bounds reasoning decisions and defaults to five.
+- `AGENT_MAX_TOOL_CALLS` bounds all tool requests, including cache hits, and defaults to five.
+- `LANGGRAPH_RECURSION_LIMIT` is an outer graph guard. When agentic mode is enabled it must be at
+  least `2 * AGENT_MAX_STEPS + 3`; the default of 25 covers the default workflow limits.
 
 ## Ingestion
 
@@ -168,7 +246,7 @@ failed assessment state; credentials, raw provider failures, embeddings, documen
 RAG contexts are not logged.
 
 `GET /api/v1/assessments/{assessment_id}` continues to return the persisted request, structured
-result or safe failure, and lifecycle timestamps.
+result or safe failure, lifecycle timestamps, and optional safe V4 execution metadata.
 
 ## Database schema and migration
 
@@ -183,6 +261,10 @@ Alembic revision `20260909_0002` follows the unmodified V2 revision `20260909_00
 
 Downgrade removes the HNSW index and knowledge tables but deliberately does not drop `vector`.
 PostgreSQL extensions are cluster-level capabilities and may be shared by unrelated schemas.
+
+V4 revision `20260909_0003` follows the unmodified V3 migration and adds only nullable
+`assessments.execution_metadata` JSONB storage. It is nullable so deterministic and historical
+assessment records retain their existing behavior. Its downgrade removes only that column.
 
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
@@ -200,11 +282,11 @@ alembic history
 ```
 
 Normal tests use isolated SQLite databases, deterministic synthetic knowledge, deterministic fake
-vectors, and mocked OpenAI clients. They cover normalization, chunking, batching and vector-shape
-validation, repository persistence, retrieval query construction, filtering boundaries, source
-metadata, controlled RAG context, zero-result fallback, knowledge APIs, grounding rules, and a
-simulated end-to-end ingestion-to-persisted-assessment flow. No external dataset or provider network
-call is required.
+vectors, and mocked OpenAI clients. In addition to V1-V3 coverage, V4 tests cover typed state,
+prompt construction, strict schemas, the allowlist, unknown and invalid tool calls, document lookup,
+empty/error retrieval, duplicate caching, routing, all graph paths, finite termination, safe traces,
+service persistence, and POST/GET round trips through the real graph. No external dataset or
+provider network call is required.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -232,10 +314,10 @@ Do not run multiple test processes against the same test database. Run only fast
 pytest -m "not postgres"
 ```
 
-## V3 scope boundary
+## V4 scope boundary
 
-V3 is the knowledge and RAG baseline only. It does not activate the dormant LangGraph scaffold and
-does not add ReAct loops, generic tool calling, agents, multi-agent orchestration, MCP, knowledge
-graphs, GraphRAG, LangSmith instrumentation, UI, authentication, deployment, Docker, PDF parsing,
-OCR, or a full evaluation framework. Those concerns remain deferred; do not infer them from the
-presence of retrieval.
+V4 activates the prior LangGraph scaffold only for the optional controlled single-agent workflow.
+It is not a general agent platform and does not add multiple agents, a supervisor/worker pattern,
+multi-agent orchestration, arbitrary tools, MCP, knowledge graphs, GraphRAG, LangSmith, an eval
+framework, UI, authentication, deployment, Docker, file parsing, or OCR. Those concerns remain
+outside V4; V5 has not been started.

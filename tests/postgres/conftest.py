@@ -160,7 +160,7 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
     assert downgrade_revision is None
     assert assessment_table_removed
     assert knowledge_tables_removed
-    assert upgrade_revision == "20260909_0002"
+    assert upgrade_revision == "20260909_0003"
     assert assessment_table_created
     assert knowledge_tables_created
 

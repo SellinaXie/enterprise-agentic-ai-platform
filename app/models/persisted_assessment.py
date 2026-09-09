@@ -16,6 +16,7 @@ class PersistedAssessment:
     status: AssessmentStatus
     request_payload: dict[str, Any]
     result_payload: dict[str, Any] | None
+    execution_metadata: dict[str, Any] | None
     error_code: str | None
     error_message: str | None
     created_at: datetime

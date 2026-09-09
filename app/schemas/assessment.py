@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.agents.models import AssessmentExecutionMetadata
 from app.models.assessment import (
     AssessmentStatus,
     ComplexityLevel,
@@ -139,6 +140,7 @@ class AssessmentResponse(BaseModel):
     status: AssessmentStatus
     input: AssessmentRequest
     result: AssessmentResult | None
+    execution: AssessmentExecutionMetadata | None = None
     error: AssessmentFailure | None
     created_at: datetime
     updated_at: datetime

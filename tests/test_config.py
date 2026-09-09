@@ -25,8 +25,22 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.rag_chunk_overlap == 200
     assert settings.rag_retrieval_top_k == 5
     assert settings.rag_similarity_threshold == 0.35
+    assert settings.agentic_workflow_enabled is False
+    assert settings.agent_max_steps == 5
+    assert settings.agent_max_tool_calls == 5
+    assert settings.langgraph_recursion_limit == 25
 
 
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, RAG_CHUNK_SIZE=300, RAG_CHUNK_OVERLAP=300)
+
+
+def test_agentic_recursion_limit_must_cover_bounded_graph_path() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            AGENTIC_WORKFLOW_ENABLED=True,
+            AGENT_MAX_STEPS=5,
+            LANGGRAPH_RECURSION_LIMIT=12,
+        )

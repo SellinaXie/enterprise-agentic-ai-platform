@@ -1,4 +1,4 @@
-"""Live verification of the V2 application-state layer on PostgreSQL."""
+"""Live verification of the V2-V4 persistence and V3 pgvector layers."""
 
 from types import SimpleNamespace
 from typing import cast
@@ -68,7 +68,7 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
         ).scalar_one()
 
     assert version.startswith("PostgreSQL ")
-    assert revision == "20260909_0002"
+    assert revision == "20260909_0003"
     assert "assessments" in schema.get_table_names()
     assert "knowledge_documents" in schema.get_table_names()
     assert "knowledge_chunks" in schema.get_table_names()
@@ -76,6 +76,7 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
     assert isinstance(columns["id"]["type"], PostgreSQLUUID)
     assert isinstance(columns["request_payload"]["type"], JSONB)
     assert isinstance(columns["result_payload"]["type"], JSONB)
+    assert isinstance(columns["execution_metadata"]["type"], JSONB)
     assert isinstance(columns["created_at"]["type"], TIMESTAMP)
     assert columns["created_at"]["type"].timezone is True
     assert columns["updated_at"]["type"].timezone is True
@@ -126,6 +127,13 @@ def test_repository_create_get_and_completed_round_trip(
     """Round-trip UUID, JSONB, timestamps, status updates, and a completed result."""
     request = synthetic_assessment_request
     expected_result = synthetic_assessment_result
+    execution_metadata = {
+        "execution_mode": "agentic",
+        "steps_used": 1,
+        "tools_used": [],
+        "termination_reason": "agent_stopped",
+        "trace": [],
+    }
 
     with postgres_session_factory() as session:
         repository = AssessmentRepository(session)
@@ -136,6 +144,7 @@ def test_repository_create_get_and_completed_round_trip(
         completed = repository.mark_completed(
             assessment_id,
             expected_result.model_dump(mode="json"),
+            execution_metadata,
         )
         repository.commit()
 
@@ -156,6 +165,7 @@ def test_repository_create_get_and_completed_round_trip(
     assert persisted is not None
     assert persisted.status == AssessmentStatus.COMPLETED
     assert AssessmentResult.model_validate(persisted.result_payload) == expected_result
+    assert persisted.execution_metadata == execution_metadata
 
 
 def test_repository_failed_state_round_trip(

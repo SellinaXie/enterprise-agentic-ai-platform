@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     rag_retrieval_top_k: int = Field(default=5, ge=1, le=20)
     rag_similarity_threshold: float = Field(default=0.35, ge=-1.0, le=1.0)
 
+    agentic_workflow_enabled: bool = False
+    agent_max_steps: int = Field(default=5, ge=1, le=50)
+    agent_max_tool_calls: int = Field(default=5, ge=1, le=50)
     langgraph_recursion_limit: int = Field(default=25, ge=1, le=1_000)
 
     @model_validator(mode="after")
@@ -54,6 +57,14 @@ class Settings(BaseSettings):
         """Require overlap to be smaller than the deterministic chunk size."""
         if self.rag_chunk_overlap >= self.rag_chunk_size:
             raise ValueError("RAG_CHUNK_OVERLAP must be smaller than RAG_CHUNK_SIZE")
+        minimum_recursion_limit = self.agent_max_steps * 2 + 3
+        if self.agentic_workflow_enabled and (
+            self.langgraph_recursion_limit < minimum_recursion_limit
+        ):
+            raise ValueError(
+                "LANGGRAPH_RECURSION_LIMIT must be at least 2 * AGENT_MAX_STEPS + 3 "
+                "when AGENTIC_WORKFLOW_ENABLED is true"
+            )
         return self
 
 

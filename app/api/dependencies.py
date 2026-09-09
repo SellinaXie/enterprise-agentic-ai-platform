@@ -6,8 +6,10 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.agents.assessment_agent import OpenAIAssessmentAgent
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
+from app.graph.workflow import AgenticAssessmentWorkflow
 from app.rag.embeddings import OpenAIEmbeddingsService
 from app.rag.ingestion import KnowledgeIngestionService
 from app.rag.retrieval import RetrievalService
@@ -17,6 +19,8 @@ from app.repositories.knowledge_chunks import KnowledgeChunkRepository
 from app.repositories.knowledge_documents import KnowledgeDocumentRepository
 from app.services.assessments import AssessmentGenerator, AssessmentService
 from app.services.llm import OpenAIAssessmentGenerator, get_openai_client
+from app.tools.knowledge import build_knowledge_tool_registry
+from app.tools.registry import ToolRegistry
 
 
 def get_assessment_generator(
@@ -103,10 +107,60 @@ def get_assessment_rag_service(
     return RAGService(retrieval) if settings.rag_enabled else None
 
 
+def get_assessment_agent(
+    generator: Annotated[AssessmentGenerator, Depends(get_assessment_generator)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OpenAIAssessmentAgent:
+    """Build exactly one OpenAI-backed assessment reasoning agent."""
+    return OpenAIAssessmentAgent(
+        model=settings.openai_model,
+        generator=generator,
+        store_responses=settings.openai_store_responses,
+        client_provider=partial(get_openai_client, settings),
+    )
+
+
+def get_agent_tool_registry(
+    retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    documents: Annotated[
+        KnowledgeDocumentRepository,
+        Depends(get_knowledge_document_repository),
+    ],
+) -> ToolRegistry:
+    """Expose only the two approved V4 read-only knowledge tools."""
+    return build_knowledge_tool_registry(retrieval=retrieval, documents=documents)
+
+
+def get_agentic_assessment_workflow(
+    agent: Annotated[OpenAIAssessmentAgent, Depends(get_assessment_agent)],
+    tools: Annotated[ToolRegistry, Depends(get_agent_tool_registry)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AgenticAssessmentWorkflow | None:
+    """Compile the V4 graph only when the explicit feature flag is enabled."""
+    if not settings.agentic_workflow_enabled:
+        return None
+    return AgenticAssessmentWorkflow(
+        agent=agent,
+        tools=tools,
+        max_steps=settings.agent_max_steps,
+        max_tool_calls=settings.agent_max_tool_calls,
+        recursion_limit=settings.langgraph_recursion_limit,
+    )
+
+
 def get_assessment_service(
     generator: Annotated[AssessmentGenerator, Depends(get_assessment_generator)],
     repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     rag_service: Annotated[RAGService | None, Depends(get_assessment_rag_service)],
+    agentic_workflow: Annotated[
+        AgenticAssessmentWorkflow | None,
+        Depends(get_agentic_assessment_workflow),
+    ],
 ) -> AssessmentService:
     """Compose the service from provider and persistence boundaries."""
-    return AssessmentService(generator, repository, rag_service)
+    return AssessmentService(
+        generator,
+        repository,
+        rag_service,
+        agentic_workflow=agentic_workflow,
+    )
