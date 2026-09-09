@@ -15,9 +15,14 @@ from app.api.routes.health import router as health_router
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     ApplicationError,
+    AssessmentGenerationError,
+    AssessmentNotFoundError,
+    DatabaseNotConfiguredError,
+    DatabaseUnavailableError,
     InvalidLLMResponseError,
     LLMProviderError,
     OpenAIClientNotConfiguredError,
+    PersistenceError,
 )
 from app.core.logging import configure_logging
 from app.schemas.errors import ErrorDetail, ErrorResponse
@@ -51,9 +56,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.exception_handler(ApplicationError)
     async def handle_application_error(_: Request, exc: ApplicationError) -> JSONResponse:
         status_codes = {
+            AssessmentNotFoundError: status.HTTP_404_NOT_FOUND,
             OpenAIClientNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
             LLMProviderError: status.HTTP_502_BAD_GATEWAY,
             InvalidLLMResponseError: status.HTTP_502_BAD_GATEWAY,
+            AssessmentGenerationError: status.HTTP_502_BAD_GATEWAY,
+            DatabaseNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            DatabaseUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            PersistenceError: status.HTTP_503_SERVICE_UNAVAILABLE,
         }
         payload = ErrorResponse(error=ErrorDetail(code=exc.error_code, message=exc.public_message))
         return JSONResponse(

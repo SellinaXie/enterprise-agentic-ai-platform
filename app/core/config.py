@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     )
     api_v1_prefix: str = "/api/v1"
 
+    database_url: SecretStr | None = Field(default=None, validation_alias="DATABASE_URL")
+
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = Field(default=30.0, gt=0)

@@ -6,7 +6,10 @@ from enum import StrEnum
 class AssessmentStatus(StrEnum):
     """Lifecycle states supported by an assessment."""
 
+    PENDING = "pending"
+    PROCESSING = "processing"
     COMPLETED = "completed"
+    FAILED = "failed"
 
 
 class SuitabilityLevel(StrEnum):

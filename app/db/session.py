@@ -1,0 +1,61 @@
+"""Synchronous SQLAlchemy engine and session construction."""
+
+from collections.abc import Iterator
+from contextlib import suppress
+from functools import lru_cache
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
+
+from app.core.config import Settings, get_settings
+from app.core.exceptions import DatabaseNotConfiguredError, DatabaseUnavailableError
+
+
+def get_database_url(settings: Settings) -> str:
+    """Return the configured URL without logging or otherwise exposing it."""
+    if settings.database_url is None:
+        raise DatabaseNotConfiguredError
+
+    database_url = settings.database_url.get_secret_value().strip()
+    if not database_url:
+        raise DatabaseNotConfiguredError
+    return database_url
+
+
+@lru_cache
+def get_engine(database_url: str) -> Engine:
+    """Create one lazy synchronous engine per configured database URL."""
+    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+    return create_engine(database_url, pool_pre_ping=True, connect_args=connect_args)
+
+
+@lru_cache
+def get_session_factory(database_url: str) -> sessionmaker[Session]:
+    """Return a session factory with explicit transaction control."""
+    return sessionmaker(
+        bind=get_engine(database_url),
+        class_=Session,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+
+
+def get_db_session(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Iterator[Session]:
+    """Yield a request-scoped session; services own commit boundaries."""
+    try:
+        session = get_session_factory(get_database_url(settings))()
+    except SQLAlchemyError as exc:
+        raise DatabaseUnavailableError from exc
+    try:
+        yield session
+    except Exception:
+        with suppress(SQLAlchemyError):
+            session.rollback()
+        raise
+    finally:
+        session.close()

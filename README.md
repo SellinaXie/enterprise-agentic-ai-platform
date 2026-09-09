@@ -1,16 +1,34 @@
 # Enterprise AI Transformation Advisor
 
-Production-minded V1 backend for assessing where AI or automation can create
-value in an enterprise business process.
+Production-minded V2 backend for assessing where AI or automation can create value in an
+enterprise business process.
 
-V1 accepts validated discovery context, makes one synchronous OpenAI Responses
-API call, constrains the model output with a Pydantic schema, validates the
-result again at the service boundary, and returns a completed assessment. It
-does not use LangGraph orchestration, agents, retrieval, or persistence yet.
+V2 preserves the synchronous, schema-constrained OpenAI assessment flow from V1 and adds
+PostgreSQL-backed application state. It records the validated request, lifecycle status,
+structured result or safe failure, and UTC timestamps. PostgreSQL is not a knowledge or RAG
+database in this version.
+
+## Architecture
+
+```text
+FastAPI → Assessment Service → Assessment Repository → PostgreSQL
+                    └───────→ OpenAI Service
+```
+
+- FastAPI owns HTTP validation, routing, and safe error responses.
+- `AssessmentService` owns lifecycle orchestration and transaction boundaries.
+- `AssessmentRepository` owns SQLAlchemy persistence operations.
+- The OpenAI adapter owns Responses API access and schema-constrained parsing.
+- Pydantic HTTP models, persistence-neutral domain records, and ORM models remain separate.
+
+The stack is synchronous end to end because the existing route and OpenAI client are
+synchronous. Each lifecycle milestone is committed intentionally: `pending`, `processing`,
+then `completed` or `failed`. This preserves a durable failure record when generation fails.
 
 ## Requirements
 
 - Python 3.12 or newer
+- PostgreSQL
 - `pip`
 - An OpenAI API key for assessment generation
 
@@ -24,29 +42,39 @@ python -m pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-Set `OPENAI_API_KEY` in `.env`. The application and `GET /health` work without
-a key, but `POST /api/v1/assessments` returns a controlled `503` response until
-one is configured. Never commit `.env`.
+Create a PostgreSQL database and dedicated application account, then set `DATABASE_URL` in
+`.env`. The SQLAlchemy URL uses Psycopg 3, for example:
 
-`OPENAI_MODEL` selects the model centrally. The default is `gpt-4.1-mini`.
-Provider-side response storage is disabled by default through
-`OPENAI_STORE_RESPONSES=false`.
+```dotenv
+DATABASE_URL=postgresql+psycopg://enterprise_ai:local-password@localhost:5432/enterprise_ai
+```
 
-## Run the API
+Also set `OPENAI_API_KEY`. Never commit `.env`. The application does not log the database URL,
+credentials, private assessment payloads, or raw prompts.
+
+Apply the canonical schema migration:
+
+```bash
+alembic upgrade head
+alembic current
+alembic history
+```
+
+Run the API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API is available at `http://127.0.0.1:8000`, with interactive OpenAPI
-documentation at `http://127.0.0.1:8000/docs`.
+The API is available at `http://127.0.0.1:8000`, with OpenAPI documentation at
+`http://127.0.0.1:8000/docs`.
 
-Useful endpoints:
+`GET /health` remains a process liveness check and does not open a database connection.
+Assessment endpoints return a controlled `503` when persistence is not configured or available.
 
-- `GET /health`
-- `POST /api/v1/assessments`
+## API
 
-## Example assessment
+### Create and persist an assessment
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/assessments \
@@ -57,69 +85,65 @@ curl -X POST http://127.0.0.1:8000/api/v1/assessments \
     "industry": "Banking",
     "business_problem": "Manual loan review takes too long",
     "current_process": "Analysts manually gather documents and assess risk",
-    "pain_points": [
-      "Repeated document collection",
-      "Inconsistent review summaries"
-    ],
+    "pain_points": ["Repeated document collection"],
     "desired_outcome": "Reduce processing time while preserving compliance",
     "constraints": ["Final credit decisions require human approval"]
   }'
 ```
 
-The generated content varies, but every successful response follows this shape:
+A successful synchronous response remains `200 OK` and includes persisted state:
 
 ```json
 {
   "assessment_id": "5ab59db6-8a53-4d49-a0e0-4d861984a150",
   "status": "completed",
+  "input": {
+    "company_name": "Example Bank",
+    "industry": "Banking",
+    "business_problem": "Manual loan review takes too long",
+    "desired_outcome": "Reduce processing time while preserving compliance"
+  },
   "result": {
-    "executive_summary": "...",
-    "problem_analysis": {
-      "core_problem": "...",
-      "current_process_weaknesses": ["..."],
-      "key_bottlenecks": ["..."]
-    },
-    "ai_suitability": {
-      "level": "high",
-      "rationale": "..."
-    },
-    "recommended_use_cases": [
-      {
-        "name": "...",
-        "description": "...",
-        "expected_business_value": "...",
-        "complexity": "medium",
-        "priority": "high"
-      }
-    ],
-    "recommended_solution": {
-      "pattern": "llm_assisted_workflow",
-      "description": "...",
-      "rationale": "..."
-    },
-    "risks": [
-      {
-        "category": "compliance",
-        "description": "...",
-        "severity": "high",
-        "mitigation": "..."
-      }
-    ],
-    "human_oversight": {
-      "review_recommended": true,
-      "decisions_requiring_review": ["..."],
-      "rationale": "..."
-    },
-    "next_steps": [
-      {"priority": 1, "action": "...", "rationale": "..."}
-    ],
-    "assumptions": ["..."],
-    "information_gaps": ["..."]
-  }
+    "executive_summary": "..."
+  },
+  "error": null,
+  "created_at": "2026-09-09T13:00:00Z",
+  "updated_at": "2026-09-09T13:00:01Z",
+  "completed_at": "2026-09-09T13:00:01Z"
 }
 ```
 
-## Run checks
+The abbreviated `input` and `result` objects above represent the complete validated request and
+existing structured assessment schemas.
+
+### Retrieve an assessment
+
+```bash
+curl http://127.0.0.1:8000/api/v1/assessments/5ab59db6-8a53-4d49-a0e0-4d861984a150
+```
+
+`GET /api/v1/assessments/{assessment_id}` returns the stored request, result or safe failure,
+and lifecycle timestamps. Unknown IDs return `404`; invalid UUIDs return `422`.
+
+If generation fails, the row remains in PostgreSQL with `status = failed`, no fabricated result,
+and only a safe error code and public message.
+
+## Database schema
+
+The `assessments` table contains:
+
+- UUID primary key compatible with existing assessment IDs.
+- Status constrained to `pending`, `processing`, `completed`, or `failed`.
+- Queryable `company_name`, `industry`, and `business_problem` columns.
+- Complete request and result snapshots in PostgreSQL JSONB.
+- Safe nullable error code/message fields.
+- Timezone-aware creation, update, and completion timestamps.
+- Indexes for status and creation time.
+
+Alembic is the production schema authority. `Base.metadata.create_all()` is used only to build
+isolated SQLite test schemas.
+
+## Testing
 
 ```bash
 pytest
@@ -127,31 +151,20 @@ ruff check .
 ruff format --check .
 python -m compileall app tests
 python -m pip check
+alembic history
 ```
 
-Tests inject or mock the assessment generator and never make a real OpenAI API
-request.
+Tests mock the OpenAI layer and never make a real provider request. Repository and API tests use
+an isolated SQLite database per test for speed and independence. SQLite does not validate
+PostgreSQL behavior completely, so the suite also renders the Alembic migration with the
+PostgreSQL dialect and asserts that UUID, JSONB, constraints, and indexes are present. Run the
+migration against a dedicated PostgreSQL test database before deployment.
 
-## Current architecture
+## V2 scope
 
-- `app/api`: HTTP routes, exception responses, and dependency wiring.
-- `app/core`: environment configuration, application errors, and JSON logging.
-- `app/schemas`: validated API contracts and the structured LLM output schema.
-- `app/models`: constrained domain enums.
-- `app/services`: prompt construction, assessment orchestration, and OpenAI access.
-- `app/graph`: inactive LangGraph scaffold reserved for a later version.
-- `app/agents`: future agent definitions and orchestration components.
-- `app/tools`: future structured tool/function implementations.
-- `app/rag`: future retrieval and knowledge-source components.
-- `app/evaluation`: future tracing and evaluation support.
-- `tests`: API, prompt, schema, failure-path, and health tests.
+V2 adds relational application-state persistence only. It intentionally does not add pgvector,
+embeddings, document or chunk models, retrieval, RAG, active LangGraph orchestration, tools,
+agents, MCP, knowledge graphs, authentication, background jobs, Docker, or CI/CD.
 
-The route delegates to the assessment service. The service builds provider-neutral
-prompt context and calls an injected generator. The OpenAI implementation alone
-knows about the Responses API and schema-constrained parsing.
-
-## V1 boundaries
-
-V1 intentionally does not add PostgreSQL, pgvector, embeddings, RAG, active
-LangGraph execution, tools, multiple agents, MCP, LangSmith, authentication,
-Docker, or CI/CD.
+Document ingestion and vector retrieval remain explicitly deferred to V3 and will use separate
+document/chunk/embedding models rather than being mixed into assessment persistence.

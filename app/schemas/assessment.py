@@ -1,9 +1,10 @@
 """Assessment request and response schemas."""
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.assessment import (
     AssessmentStatus,
@@ -113,9 +114,33 @@ class AssessmentResult(StructuredOutputModel):
     information_gaps: list[str]
 
 
+class AssessmentFailure(BaseModel):
+    """Safe persisted failure details."""
+
+    code: str
+    message: str
+
+
 class AssessmentResponse(BaseModel):
-    """Completed AI-generated assessment response."""
+    """Persisted assessment state returned by create and retrieval endpoints."""
 
     assessment_id: UUID
     status: AssessmentStatus
-    result: AssessmentResult
+    input: AssessmentRequest
+    result: AssessmentResult | None
+    error: AssessmentFailure | None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None
+
+    @model_validator(mode="after")
+    def validate_lifecycle_payloads(self) -> "AssessmentResponse":
+        """Reject completed or failed responses with inconsistent persisted state."""
+        if self.status == AssessmentStatus.COMPLETED:
+            if self.result is None or self.completed_at is None or self.error is not None:
+                raise ValueError("Completed assessments require a result and completion timestamp")
+        elif self.status == AssessmentStatus.FAILED and (
+            self.result is not None or self.error is None
+        ):
+            raise ValueError("Failed assessments require an error and no result")
+        return self
