@@ -1,9 +1,116 @@
-# Enterprise AI Transformation Advisor
+# Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V7A backend for grounded enterprise AI assessments. V7A preserves the complete
-V1-V6.5 behavior and adds the first, deliberately deterministic part of V7: a version-controlled
-synthetic retrieval benchmark, standard vector and graph metrics, provenance checks, and
-vector/graph/hybrid comparison. V7B answer and agent evaluation has not started.
+Production-minded V7B backend for grounded enterprise AI architecture assessments. V7B preserves
+the complete V1-V7A implementation and adds deterministic assessment-quality evaluation across
+the existing deterministic, single-agent, and multi-agent modes. Architecture remains the broad
+purpose of the platform; enterprise risk, controls, and governance are first-class quality
+dimensions rather than a replacement compliance-checking product.
+
+## V7B architecture and risk/governance quality evaluation
+
+```text
+10 synthetic enterprise scenarios + explicit expected labels
+                              │
+                              ▼
+     deterministic  vs  single_agent  vs  multi_agent
+                              │
+                              ▼
+ architecture fit + risk/control/governance + grounded claims
+                              │
+                              ▼
+ per-case metrics → mode reports → Pareto comparison + tradeoffs
+                              │
+                              └── optional, explicitly enabled LLM judge
+```
+
+The version-controlled benchmark at
+`app/evaluation/datasets/v7b_assessment_benchmark.json` contains ten fictional cases: a
+customer-service assistant handling PII, confidential internal RAG, external API tools,
+high-impact lending support, a third-party AI vendor, compliance review, human-operated
+recommendations, low-risk productivity assistance, missing evidence, and a simple deterministic
+rules workflow. It uses no customer, banking-client, proprietary, or copyrighted policy data.
+
+Run one mode or compare all three without PostgreSQL, OpenAI, the internet, or external datasets:
+
+```bash
+python -m app.evaluation.assessment.runner --mode deterministic
+python -m app.evaluation.assessment.runner --mode single_agent
+python -m app.evaluation.assessment.runner --mode multi_agent
+python -m app.evaluation.assessment.runner --all
+```
+
+Mode reports are written to `outputs/evaluation/v7b_<mode>.json`; the complete run also writes
+`outputs/evaluation/v7b_comparison.json`. Reports expose all cases, safe failures, degraded cases,
+unsupported metrics, judge status, warnings, non-secret configuration, and a SHA-256 fingerprint
+of deterministic results. Runtime reports remain ignored by Git.
+
+### V7B controlled taxonomies
+
+The finite risk taxonomy is: privacy, security, model risk, hallucination/grounding, compliance,
+operational risk, access control, data governance, third-party/vendor risk, explainability, human
+oversight, monitoring, and auditability.
+
+The finite control taxonomy is: retrieval grounding, role-based access control, least privilege,
+tool allowlisting, human approval, escalation, audit logging, data minimization, model monitoring,
+output validation, fallback behavior, versioning, approval gates, vendor due diligence, and
+incident response. These vocabularies exist for repeatable benchmark scoring; they do not claim to
+be a regulatory standard or complete GRC framework.
+
+### V7B deterministic metrics
+
+- **Risk recall** is expected risk categories identified divided by all expected risks.
+- **Risk precision** is expected risk categories identified divided by all unique evaluable risks
+  identified. Unexpected and explicitly unacceptable categories therefore reduce precision.
+- **Severity consistency** is severity matches divided by matched expected risks.
+- **Control coverage** and **governance coverage** are matched explicit expectations divided by
+  all expected controls or governance requirements.
+- **Human-oversight accuracy** is one when the recommendation matches the case expectation. It
+  penalizes both missing required oversight and unnecessary oversight.
+- **Architecture fit** is matched explicit architecture characteristics divided by all expected
+  characteristics. Expectations include when RAG, graph retrieval, an agent, multiple agents, or
+  human approval is justified, and when a simpler workflow should be preferred.
+- **Over-engineering avoidance** is one for a simple-workflow case when the recommendation avoids
+  asserting agent or multi-agent necessity. It is `N/A` when simplicity is not a test objective.
+- **Groundedness** is validly supported normalized claims divided by all emitted evaluable claims.
+  Support must trace to allowed assessment input, retrieved evidence, an existing specialist
+  finding, or an allowed general-knowledge category.
+- **Unsupported claim rate** is claims without any benchmark-valid support divided by all emitted
+  evaluable claims. Unknown claims, invented references, and disallowed support types fail.
+- **Appropriate abstention** checks explicit uncertainty, refusal to invent a conclusion, and a
+  validation recommendation when evidence is insufficient; unnecessary abstention is also
+  penalized.
+- **Specialist preservation** and **synthesis transparency** apply to multi-agent fixtures. They
+  test preservation of important existing specialist findings, surfaced disagreements, rejection
+  of invented findings, and disclosure of unavailable/degraded inputs.
+
+Metrics are macro-averaged independently; unavailable dimensions remain JSON `null` and display as
+`N/A`. The comparison uses a per-case Pareto frontier instead of a hidden global score. It can
+therefore show deterministic sufficiency, agent improvements, ties, or failures without hardcoding
+a winner. "Complexity is earned, not assumed" is tested directly by the two simple cases.
+
+### Optional model-based judge
+
+`EVALUATION_LLM_JUDGE_ENABLED=false` by default. A provider call requires both that environment
+flag, an explicit CLI `--llm-judge`, and `OPENAI_API_KEY`; tests never enable it. The judge uses a
+strict schema and separate 1–5 rubrics for groundedness, risk reasoning, mitigation usefulness,
+architecture appropriateness, governance completeness, and clarity/actionability. Evaluated
+content is delimited as untrusted data and cannot grant tools or change instructions. Results are
+labeled model-based opinions, never ground truth, and contain only concise rationales—not
+chain-of-thought. The report records the judge model, call count, and SDK token counters when the
+provider exposes them directly.
+
+The default fixture profile evaluates declared normalized outputs, including synthetic specialist
+handoffs and degraded states. It validates the harness and illustrates controlled tradeoffs; it
+does not measure a live model or production deployment. In particular:
+
+```text
+Synthetic benchmark performance
+≠
+real-world production assurance
+```
+
+V7B adds no endpoint, database table, migration, agent role, tool permission, or runtime quality
+gate. It does not execute benchmark content.
 
 ## V7A deterministic retrieval evaluation
 
@@ -86,8 +193,9 @@ Retrieval evaluation is not final-answer quality evaluation.
 Implemented: deterministic retrieval evaluation, vector metrics, graph retrieval metrics, hybrid
 retrieval comparison, negative-query measurement, and provenance validation.
 
-Planned: LLM output evaluation, specialist-agent evaluation, observability, and human-in-the-loop
-reliability controls in later V7 increments. V7 as a whole is not complete.
+Implemented in V7B: final assessment architecture/risk/governance evaluation and optional
+model-based judging. Observability and human-in-the-loop reliability controls remain planned for
+V7C. V7 as a whole is not complete.
 
 ## V6.5 enterprise document ingestion
 
@@ -138,8 +246,8 @@ extraction; vector RAG; GraphRAG; and the existing multi-agent workflows.
 
 Current limitation: image-only and scanned PDFs require OCR and are not supported by V6.5.
 
-Planned: answer/agent evaluation and observability in later V7 increments, productionization in
-V8, and MCP or external enterprise integrations only where later evidence justifies them.
+Planned: observability and reliability controls in V7C, productionization in V8, and MCP or
+external enterprise integrations only where later evidence justifies them.
 
 ## V6 capability
 
@@ -665,6 +773,10 @@ the existing document/chunk JSONB metadata model, so Alembic head remains `20260
 V7A is a version-controlled benchmark and local report layer. It adds no persistence tables and no
 migration; Alembic head remains unchanged.
 
+V7B is also a version-controlled benchmark and local report layer. Its normalized quality
+contracts deliberately do not modify the stable `AssessmentResult`; Alembic head remains
+`20260910_0004`.
+
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
 pgvector operators.
@@ -704,6 +816,11 @@ V7A adds network-free tests for perfect, partial, empty, duplicate, over-K, and 
 dataset integrity; entity, relationship, path, and provenance metrics; invented-identity rejection;
 all three retrieval modes; incompatible-case skips; non-secret configuration snapshots; JSON
 serialization; comparison alignment; CLI output; and repeatability. No provider call is made.
+V7B adds benchmark-integrity, finite-taxonomy, risk recall/precision, severity, controls,
+governance, human oversight, architecture fit, over-engineering, claim support, citation,
+abstention, specialist preservation, synthesis transparency, degraded/failure reporting,
+three-mode comparison, optional-judge schema/security, CLI, and reproducibility coverage. The
+judge and provider boundary are mocked.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -738,13 +855,18 @@ Do not run multiple test processes against the same test database. Run only fast
 pytest -m "not postgres"
 ```
 
-## V7A scope boundary
+## V7 evaluation scope boundary
 
-V7A evaluates deterministic retrieval and provenance only. It does not score generated answers,
-groundedness, architecture recommendations, governance analysis, the Evidence Agent, specialist
-agents, or multi-agent orchestration. It adds no LLM-as-judge, LangSmith integration, external
-observability, human-in-the-loop workflow, retry/timeout platform, cost dashboard, production
-telemetry, migration, API endpoint, or provider dependency.
+V7A evaluates retrieval and provenance. V7B evaluates normalized final assessment quality and the
+existing specialist/synthesis handoffs through deterministic fixtures, with an optional
+schema-constrained judge. Neither stage changes runtime assessment behavior or claims production
+assurance.
+
+V7B adds no LangSmith, OpenTelemetry platform, vendor dashboard, persistent tracing, full
+latency/token/cost analytics, SLO/SLA, retry framework, timeout framework, LangGraph interrupt or
+resume, human-review queue, approval workflow, escalation engine, or runtime quality-gate
+enforcement. These reliability and observability capabilities remain deferred to V7C or V8. MCP
+remains deferred until a concrete interoperability use case exists.
 
 The V6.5 ingestion limitations remain: scanned/image-only PDFs need OCR; file ingestion is
 synchronous and memory-bounded; and legacy Word, spreadsheets, presentations, image understanding,

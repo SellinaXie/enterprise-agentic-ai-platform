@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
-    app_name: str = "Enterprise AI Transformation Advisor"
+    app_name: str = "Enterprise AI Architecture & Risk Intelligence Platform"
     environment: Literal["local", "development", "test", "staging", "production"] = Field(
         default="local",
         validation_alias="APP_ENV",
@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     evidence_agent_max_tool_calls: int = Field(default=4, ge=1, le=50)
     multi_agent_max_failures: int = Field(default=2, ge=0, le=2)
     specialist_retry_limit: int = Field(default=1, ge=0, le=3)
+
+    evaluation_llm_judge_enabled: bool = False
+    evaluation_judge_model: str = "gpt-4.1-mini"
 
     @model_validator(mode="after")
     def validate_chunk_settings(self) -> Self:

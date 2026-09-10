@@ -1,0 +1,282 @@
+{
+  "dataset_id": "v7b-enterprise-architecture-risk-quality",
+  "version": "1.0.0",
+  "description": "Ten fictional enterprise AI scenarios with explicit architecture, risk, control, governance, evidence, and abstention expectations.",
+  "synthetic": true,
+  "taxonomy_notice": "The finite taxonomies support repeatable evaluation and do not constitute a regulatory standard or production assurance framework.",
+  "cases": [
+    {
+      "case_id": "case01_customer_service_pii",
+      "title": "Customer-service assistant handling personal data",
+      "scenario_category": "customer_service_pii",
+      "business_context": "A fictional retail bank wants a GenAI assistant to draft customer-service responses using account context.",
+      "industry": "Financial services",
+      "business_problem": "Reduce response preparation time without exposing personal data or sending unreviewed advice.",
+      "expected_risks": [
+        {"category": "privacy", "severity": "high"},
+        {"category": "security", "severity": "high"},
+        {"category": "hallucination_grounding", "severity": "high"},
+        {"category": "compliance", "severity": "high"}
+      ],
+      "unacceptable_risks": ["third_party_vendor_risk"],
+      "expected_controls": ["retrieval_grounding", "role_based_access_control", "data_minimization", "output_validation", "audit_logging", "human_approval"],
+      "expected_governance_requirements": ["accountable_owner", "risk_review", "human_decision_authority", "audit_record"],
+      "expected_architecture_characteristics": ["rag_appropriate", "human_approval_required", "external_tool_permissions_constrained"],
+      "human_oversight_expected": true,
+      "available_evidence_ids": ["ev01_customer_policy"],
+      "evidence_requirements": [
+        {"claim_id": "c01_context", "allowed_sources": ["assessment_input"]},
+        {"claim_id": "c01_policy", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev01_customer_policy"], "allowed_specialist_finding_ids": ["f01_evidence"], "citation_required": true}
+      ],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "Human review and grounded response generation are required; autonomous customer commitments are not.",
+      "fixtures": {
+        "deterministic": {
+          "summary": "Use a cited response assistant with review.",
+          "identified_risks": [{"finding_id": "r01_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r01_hallucination", "category": "hallucination_grounding", "severity": "medium"}],
+          "recommended_controls": ["retrieval_grounding", "human_approval", "output_validation"],
+          "governance_requirements": ["human_decision_authority", "audit_record"],
+          "architecture_characteristics": ["rag_appropriate", "human_approval_required"],
+          "human_oversight_recommended": true,
+          "uncertainty_acknowledged": false,
+          "abstained_from_unsupported_conclusion": false,
+          "validation_recommended": true,
+          "claims": [{"claim_id": "c01_context", "claim_type": "fact", "summary": "The assistant handles account context.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c01_invented_policy", "claim_type": "governance", "summary": "A fictional regulation mandates this exact design.", "supports": []}]
+        },
+        "single_agent": {
+          "summary": "Use grounded drafting with access boundaries and mandatory review.",
+          "identified_risks": [{"finding_id": "r01_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r01_security", "category": "security", "severity": "high"}, {"finding_id": "r01_hallucination", "category": "hallucination_grounding", "severity": "high"}, {"finding_id": "r01_compliance", "category": "compliance", "severity": "high"}],
+          "recommended_controls": ["retrieval_grounding", "role_based_access_control", "data_minimization", "output_validation", "audit_logging", "human_approval"],
+          "governance_requirements": ["accountable_owner", "risk_review", "human_decision_authority", "audit_record"],
+          "architecture_characteristics": ["rag_appropriate", "human_approval_required", "external_tool_permissions_constrained"],
+          "human_oversight_recommended": true,
+          "uncertainty_acknowledged": false,
+          "abstained_from_unsupported_conclusion": false,
+          "validation_recommended": true,
+          "claims": [{"claim_id": "c01_context", "claim_type": "fact", "summary": "The assistant handles account context.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c01_policy", "claim_type": "control", "summary": "The synthetic policy requires reviewed responses.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev01_customer_policy"}]}]
+        },
+        "multi_agent": {
+          "summary": "Use governed RAG with constrained data access, validation, and human approval.",
+          "identified_risks": [{"finding_id": "r01_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r01_security", "category": "security", "severity": "high"}, {"finding_id": "r01_hallucination", "category": "hallucination_grounding", "severity": "high"}, {"finding_id": "r01_compliance", "category": "compliance", "severity": "high"}],
+          "recommended_controls": ["retrieval_grounding", "role_based_access_control", "data_minimization", "output_validation", "audit_logging", "human_approval"],
+          "governance_requirements": ["accountable_owner", "risk_review", "human_decision_authority", "audit_record"],
+          "architecture_characteristics": ["rag_appropriate", "human_approval_required", "external_tool_permissions_constrained"],
+          "human_oversight_recommended": true,
+          "uncertainty_acknowledged": false,
+          "abstained_from_unsupported_conclusion": false,
+          "validation_recommended": true,
+          "claims": [{"claim_id": "c01_context", "claim_type": "fact", "summary": "The assistant handles account context.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c01_policy", "claim_type": "control", "summary": "The synthetic policy requires reviewed responses.", "supports": [{"source": "specialist_output", "reference_id": "f01_evidence"}]}],
+          "specialists": {"available_finding_ids": ["f01_evidence", "f01_architecture", "f01_risk"], "important_finding_ids": ["f01_evidence", "f01_architecture", "f01_risk"]},
+          "preserved_specialist_finding_ids": ["f01_evidence", "f01_architecture", "f01_risk"]
+        }
+      }
+    },
+    {
+      "case_id": "case02_confidential_internal_rag",
+      "title": "Internal assistant using confidential policies",
+      "scenario_category": "confidential_internal_rag",
+      "business_context": "A fictional insurer wants employees to query confidential internal procedures.",
+      "industry": "Insurance",
+      "business_problem": "Make policy discovery faster while preserving access boundaries and citations.",
+      "expected_risks": [{"category": "access_control", "severity": "high"}, {"category": "data_governance", "severity": "high"}, {"category": "hallucination_grounding", "severity": "medium"}, {"category": "security", "severity": "high"}],
+      "unacceptable_risks": ["third_party_vendor_risk"],
+      "expected_controls": ["retrieval_grounding", "role_based_access_control", "least_privilege", "audit_logging", "output_validation"],
+      "expected_governance_requirements": ["data_use_approval", "accountable_owner", "audit_record"],
+      "expected_architecture_characteristics": ["rag_appropriate", "external_tool_permissions_constrained"],
+      "human_oversight_expected": false,
+      "available_evidence_ids": ["ev02_access_policy"],
+      "evidence_requirements": [{"claim_id": "c02_context", "allowed_sources": ["assessment_input"]}, {"claim_id": "c02_access", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev02_access_policy"], "allowed_specialist_finding_ids": ["f02_evidence"], "citation_required": true}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "RAG is appropriate, but retrieval must enforce the user's source permissions.",
+      "fixtures": {
+        "deterministic": {"summary": "Use permission-filtered policy retrieval.", "identified_risks": [{"finding_id": "r02_access", "category": "access_control", "severity": "high"}, {"finding_id": "r02_grounding", "category": "hallucination_grounding", "severity": "medium"}], "recommended_controls": ["retrieval_grounding", "role_based_access_control", "audit_logging"], "governance_requirements": ["data_use_approval", "audit_record"], "architecture_characteristics": ["rag_appropriate", "external_tool_permissions_constrained"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c02_context", "claim_type": "fact", "summary": "Employees query internal procedures.", "supports": [{"source": "assessment_input"}]}]},
+        "single_agent": {"summary": "Use permission-aware RAG with citations and audit logging.", "identified_risks": [{"finding_id": "r02_access", "category": "access_control", "severity": "high"}, {"finding_id": "r02_data", "category": "data_governance", "severity": "high"}, {"finding_id": "r02_grounding", "category": "hallucination_grounding", "severity": "medium"}, {"finding_id": "r02_security", "category": "security", "severity": "high"}], "recommended_controls": ["retrieval_grounding", "role_based_access_control", "least_privilege", "audit_logging", "output_validation"], "governance_requirements": ["data_use_approval", "accountable_owner", "audit_record"], "architecture_characteristics": ["rag_appropriate", "external_tool_permissions_constrained"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c02_context", "claim_type": "fact", "summary": "Employees query internal procedures.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c02_access", "claim_type": "control", "summary": "Access must follow the synthetic policy.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev02_access_policy"}]}]},
+        "multi_agent": {"summary": "Use permission-aware RAG with citations and audit logging; graph evidence was unavailable, so the result relies on vector evidence.", "identified_risks": [{"finding_id": "r02_access", "category": "access_control", "severity": "high"}, {"finding_id": "r02_data", "category": "data_governance", "severity": "high"}, {"finding_id": "r02_grounding", "category": "hallucination_grounding", "severity": "medium"}, {"finding_id": "r02_security", "category": "security", "severity": "high"}], "recommended_controls": ["retrieval_grounding", "role_based_access_control", "least_privilege", "audit_logging", "output_validation"], "governance_requirements": ["data_use_approval", "accountable_owner", "audit_record"], "architecture_characteristics": ["rag_appropriate", "external_tool_permissions_constrained"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c02_context", "claim_type": "fact", "summary": "Employees query internal procedures.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c02_access", "claim_type": "control", "summary": "Access must follow the synthetic policy.", "supports": [{"source": "specialist_output", "reference_id": "f02_evidence"}]}], "run_status": "degraded", "degradation_reasons": ["graph evidence unavailable; vector evidence retained"], "specialists": {"available_finding_ids": ["f02_evidence", "f02_architecture", "f02_risk"], "important_finding_ids": ["f02_evidence", "f02_architecture"]}, "preserved_specialist_finding_ids": ["f02_evidence", "f02_architecture"], "degraded_state_acknowledged": true}
+      }
+    },
+    {
+      "case_id": "case03_external_tool_access",
+      "title": "AI workflow with external API access",
+      "scenario_category": "external_tool_access",
+      "business_context": "A fictional operations team wants an AI workflow that can query and update an external case-management API.",
+      "industry": "Financial services",
+      "business_problem": "Automate case preparation without allowing unconstrained actions or silent updates.",
+      "expected_risks": [{"category": "security", "severity": "critical"}, {"category": "operational_risk", "severity": "high"}, {"category": "access_control", "severity": "critical"}, {"category": "privacy", "severity": "high"}],
+      "unacceptable_risks": ["explainability"],
+      "expected_controls": ["tool_allowlisting", "least_privilege", "human_approval", "audit_logging", "incident_response"],
+      "expected_governance_requirements": ["risk_review", "accountable_owner", "audit_record"],
+      "expected_architecture_characteristics": ["agent_workflow_justified", "human_approval_required", "external_tool_permissions_constrained"],
+      "human_oversight_expected": true,
+      "available_evidence_ids": ["ev03_tool_policy"],
+      "evidence_requirements": [{"claim_id": "c03_context", "allowed_sources": ["assessment_input"]}, {"claim_id": "c03_tool_control", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev03_tool_policy"], "allowed_specialist_finding_ids": ["f03_evidence"], "citation_required": true}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "Agentic tool use is justified only with bounded permissions and approval for side effects.",
+      "fixtures": {
+        "deterministic": {"summary": "Use a constrained API workflow with approval.", "identified_risks": [{"finding_id": "r03_security", "category": "security", "severity": "high"}, {"finding_id": "r03_access", "category": "access_control", "severity": "high"}], "recommended_controls": ["tool_allowlisting", "human_approval", "audit_logging"], "governance_requirements": ["accountable_owner", "audit_record"], "architecture_characteristics": ["human_approval_required", "external_tool_permissions_constrained"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c03_context", "claim_type": "fact", "summary": "The workflow can update an external API.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c03_tool_control", "claim_type": "control", "summary": "Tool calls require explicit permission.", "supports": []}]},
+        "single_agent": {"summary": "Use a bounded tool-using agent with approval for updates.", "identified_risks": [{"finding_id": "r03_security", "category": "security", "severity": "critical"}, {"finding_id": "r03_operations", "category": "operational_risk", "severity": "high"}, {"finding_id": "r03_access", "category": "access_control", "severity": "critical"}], "recommended_controls": ["tool_allowlisting", "least_privilege", "human_approval", "audit_logging"], "governance_requirements": ["risk_review", "accountable_owner", "audit_record"], "architecture_characteristics": ["agent_workflow_justified", "human_approval_required", "external_tool_permissions_constrained"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c03_context", "claim_type": "fact", "summary": "The workflow can update an external API.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c03_tool_control", "claim_type": "control", "summary": "Tool calls require explicit permission.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev03_tool_policy"}]}]},
+        "multi_agent": {"summary": "Use a bounded tool-using agent with least privilege, approval gates, and incident handling.", "identified_risks": [{"finding_id": "r03_security", "category": "security", "severity": "critical"}, {"finding_id": "r03_operations", "category": "operational_risk", "severity": "high"}, {"finding_id": "r03_access", "category": "access_control", "severity": "critical"}, {"finding_id": "r03_privacy", "category": "privacy", "severity": "high"}], "recommended_controls": ["tool_allowlisting", "least_privilege", "human_approval", "audit_logging", "incident_response"], "governance_requirements": ["risk_review", "accountable_owner", "audit_record"], "architecture_characteristics": ["agent_workflow_justified", "human_approval_required", "external_tool_permissions_constrained"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c03_context", "claim_type": "fact", "summary": "The workflow can update an external API.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c03_tool_control", "claim_type": "control", "summary": "Tool calls require explicit permission.", "supports": [{"source": "specialist_output", "reference_id": "f03_evidence"}]}], "specialists": {"available_finding_ids": ["f03_evidence", "f03_architecture", "f03_risk"], "important_finding_ids": ["f03_evidence", "f03_architecture", "f03_risk"], "disagreement_ids": ["d03_risk_architecture_conflict"]}, "preserved_specialist_finding_ids": ["f03_evidence", "f03_architecture", "f03_risk"], "surfaced_disagreement_ids": ["d03_risk_architecture_conflict"]}
+      }
+    },
+    {
+      "case_id": "case04_lending_decision_support",
+      "title": "AI support for high-impact lending decisions",
+      "scenario_category": "high_impact_decision",
+      "business_context": "A fictional lender wants AI-generated summaries and recommendations for credit analysts.",
+      "industry": "Financial services",
+      "business_problem": "Improve analyst throughput while keeping accountable credit decisions with authorized humans.",
+      "expected_risks": [{"category": "compliance", "severity": "critical"}, {"category": "explainability", "severity": "high"}, {"category": "model_risk", "severity": "critical"}, {"category": "human_oversight", "severity": "critical"}, {"category": "data_governance", "severity": "high"}],
+      "unacceptable_risks": ["third_party_vendor_risk"],
+      "expected_controls": ["human_approval", "output_validation", "audit_logging", "model_monitoring", "approval_gates"],
+      "expected_governance_requirements": ["human_decision_authority", "risk_review", "audit_record", "periodic_review"],
+      "expected_architecture_characteristics": ["rag_appropriate", "multi_agent_justified", "human_approval_required"],
+      "human_oversight_expected": true,
+      "available_evidence_ids": ["ev04_credit_policy"],
+      "evidence_requirements": [{"claim_id": "c04_context", "allowed_sources": ["assessment_input"]}, {"claim_id": "c04_decision", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev04_credit_policy"], "allowed_specialist_finding_ids": ["f04_evidence"], "citation_required": true}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "The benchmark expects assistive analysis, specialist separation, and retained human authority.",
+      "fixtures": {
+        "deterministic": {"summary": "Prepare cited lending summaries for analysts.", "identified_risks": [{"finding_id": "r04_compliance", "category": "compliance", "severity": "high"}, {"finding_id": "r04_human", "category": "human_oversight", "severity": "high"}], "recommended_controls": ["human_approval", "audit_logging", "output_validation"], "governance_requirements": ["human_decision_authority", "audit_record"], "architecture_characteristics": ["rag_appropriate", "human_approval_required"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c04_context", "claim_type": "fact", "summary": "AI recommendations support credit analysts.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c04_decision", "claim_type": "governance", "summary": "Humans retain credit decisions.", "supports": [{"source": "retrieved_evidence", "reference_id": "wrong-credit-source"}]}]},
+        "single_agent": {"summary": "Use grounded decision support with human approval and monitoring.", "identified_risks": [{"finding_id": "r04_compliance", "category": "compliance", "severity": "critical"}, {"finding_id": "r04_explain", "category": "explainability", "severity": "high"}, {"finding_id": "r04_model", "category": "model_risk", "severity": "high"}, {"finding_id": "r04_human", "category": "human_oversight", "severity": "critical"}], "recommended_controls": ["human_approval", "output_validation", "audit_logging", "model_monitoring"], "governance_requirements": ["human_decision_authority", "risk_review", "audit_record"], "architecture_characteristics": ["rag_appropriate", "human_approval_required"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c04_context", "claim_type": "fact", "summary": "AI recommendations support credit analysts.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c04_decision", "claim_type": "governance", "summary": "Humans retain credit decisions.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev04_credit_policy"}]}]},
+        "multi_agent": {"summary": "Use specialist-grounded decision support with monitoring and retained human authority.", "identified_risks": [{"finding_id": "r04_compliance", "category": "compliance", "severity": "critical"}, {"finding_id": "r04_explain", "category": "explainability", "severity": "high"}, {"finding_id": "r04_model", "category": "model_risk", "severity": "critical"}, {"finding_id": "r04_human", "category": "human_oversight", "severity": "critical"}, {"finding_id": "r04_data", "category": "data_governance", "severity": "high"}], "recommended_controls": ["human_approval", "output_validation", "audit_logging", "model_monitoring", "approval_gates"], "governance_requirements": ["human_decision_authority", "risk_review", "audit_record", "periodic_review"], "architecture_characteristics": ["rag_appropriate", "multi_agent_justified", "human_approval_required"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c04_context", "claim_type": "fact", "summary": "AI recommendations support credit analysts.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c04_decision", "claim_type": "governance", "summary": "Humans retain credit decisions.", "supports": [{"source": "specialist_output", "reference_id": "f04_evidence"}]}], "specialists": {"available_finding_ids": ["f04_evidence", "f04_architecture", "f04_risk"], "important_finding_ids": ["f04_evidence", "f04_architecture", "f04_risk"]}, "preserved_specialist_finding_ids": ["f04_evidence", "f04_architecture", "f04_risk"]}
+      }
+    },
+    {
+      "case_id": "case05_third_party_vendor",
+      "title": "Third-party AI vendor integration",
+      "scenario_category": "third_party_vendor",
+      "business_context": "A fictional bank is considering a hosted AI vendor for document classification.",
+      "industry": "Financial services",
+      "business_problem": "Adopt vendor capability while controlling data, operational, and supplier dependencies.",
+      "expected_risks": [{"category": "third_party_vendor_risk", "severity": "high"}, {"category": "privacy", "severity": "high"}, {"category": "security", "severity": "high"}, {"category": "data_governance", "severity": "high"}, {"category": "operational_risk", "severity": "medium"}],
+      "unacceptable_risks": ["human_oversight"],
+      "expected_controls": ["vendor_due_diligence", "least_privilege", "audit_logging", "incident_response", "versioning"],
+      "expected_governance_requirements": ["vendor_oversight", "accountable_owner", "risk_review", "periodic_review"],
+      "expected_architecture_characteristics": ["external_tool_permissions_constrained"],
+      "human_oversight_expected": false,
+      "available_evidence_ids": ["ev05_vendor_standard"],
+      "evidence_requirements": [{"claim_id": "c05_context", "allowed_sources": ["assessment_input"]}, {"claim_id": "c05_vendor", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev05_vendor_standard"], "allowed_specialist_finding_ids": ["f05_evidence"], "citation_required": true}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "Vendor governance is material without turning the case into a general compliance checklist.",
+      "fixtures": {
+        "deterministic": {"summary": "Constrain vendor access and perform due diligence.", "identified_risks": [{"finding_id": "r05_vendor", "category": "third_party_vendor_risk", "severity": "high"}, {"finding_id": "r05_privacy", "category": "privacy", "severity": "high"}], "recommended_controls": ["vendor_due_diligence", "least_privilege", "audit_logging"], "governance_requirements": ["vendor_oversight", "accountable_owner"], "architecture_characteristics": ["external_tool_permissions_constrained"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c05_context", "claim_type": "fact", "summary": "A hosted vendor will process documents.", "supports": [{"source": "assessment_input"}]}]},
+        "single_agent": {"summary": "Use a bounded vendor integration with due diligence and monitoring.", "identified_risks": [{"finding_id": "r05_vendor", "category": "third_party_vendor_risk", "severity": "high"}, {"finding_id": "r05_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r05_security", "category": "security", "severity": "high"}, {"finding_id": "r05_data", "category": "data_governance", "severity": "high"}], "recommended_controls": ["vendor_due_diligence", "least_privilege", "audit_logging", "incident_response"], "governance_requirements": ["vendor_oversight", "accountable_owner", "risk_review"], "architecture_characteristics": ["external_tool_permissions_constrained"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c05_context", "claim_type": "fact", "summary": "A hosted vendor will process documents.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c05_vendor", "claim_type": "governance", "summary": "Vendor review is required by the synthetic standard.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev05_vendor_standard"}]}]},
+        "multi_agent": {"summary": "Use a bounded vendor integration with full lifecycle oversight.", "identified_risks": [{"finding_id": "r05_vendor", "category": "third_party_vendor_risk", "severity": "high"}, {"finding_id": "r05_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r05_security", "category": "security", "severity": "high"}, {"finding_id": "r05_data", "category": "data_governance", "severity": "high"}, {"finding_id": "r05_operations", "category": "operational_risk", "severity": "medium"}], "recommended_controls": ["vendor_due_diligence", "least_privilege", "audit_logging", "incident_response", "versioning"], "governance_requirements": ["vendor_oversight", "accountable_owner", "risk_review", "periodic_review"], "architecture_characteristics": ["external_tool_permissions_constrained"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c05_context", "claim_type": "fact", "summary": "A hosted vendor will process documents.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c05_vendor", "claim_type": "governance", "summary": "Vendor review is required by the synthetic standard.", "supports": [{"source": "specialist_output", "reference_id": "f05_evidence"}]}], "specialists": {"available_finding_ids": ["f05_evidence", "f05_architecture", "f05_risk"], "important_finding_ids": ["f05_evidence", "f05_risk"]}, "preserved_specialist_finding_ids": ["f05_evidence", "f05_risk"]}
+      }
+    },
+    {
+      "case_id": "case06_compliance_review",
+      "title": "Compliance document-review assistant",
+      "scenario_category": "compliance_review",
+      "business_context": "A fictional compliance team wants an assistant to compare submissions with internal review procedures.",
+      "industry": "Financial services",
+      "business_problem": "Accelerate document review while preserving evidence links and reviewer accountability.",
+      "expected_risks": [{"category": "compliance", "severity": "high"}, {"category": "hallucination_grounding", "severity": "high"}, {"category": "auditability", "severity": "high"}, {"category": "data_governance", "severity": "medium"}],
+      "unacceptable_risks": ["third_party_vendor_risk"],
+      "expected_controls": ["retrieval_grounding", "output_validation", "human_approval", "audit_logging", "versioning"],
+      "expected_governance_requirements": ["risk_review", "human_decision_authority", "audit_record"],
+      "expected_architecture_characteristics": ["rag_appropriate", "human_approval_required"],
+      "human_oversight_expected": true,
+      "available_evidence_ids": ["ev06_review_process"],
+      "evidence_requirements": [{"claim_id": "c06_context", "allowed_sources": ["assessment_input"]}, {"claim_id": "c06_review", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev06_review_process"], "allowed_specialist_finding_ids": ["f06_evidence"], "citation_required": true}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "Citations and human review matter more than autonomous workflow complexity.",
+      "fixtures": {
+        "deterministic": {"summary": "Use cited comparisons with reviewer approval.", "identified_risks": [{"finding_id": "r06_compliance", "category": "compliance", "severity": "high"}, {"finding_id": "r06_grounding", "category": "hallucination_grounding", "severity": "high"}, {"finding_id": "r06_audit", "category": "auditability", "severity": "medium"}], "recommended_controls": ["retrieval_grounding", "output_validation", "human_approval", "audit_logging"], "governance_requirements": ["human_decision_authority", "audit_record"], "architecture_characteristics": ["rag_appropriate", "human_approval_required"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c06_context", "claim_type": "fact", "summary": "The assistant compares submissions to procedures.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c06_review", "claim_type": "control", "summary": "Reviewers approve final findings.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev06_review_process"}]}]},
+        "single_agent": {"summary": "Use cited review assistance with approval and versioned procedures.", "identified_risks": [{"finding_id": "r06_compliance", "category": "compliance", "severity": "high"}, {"finding_id": "r06_grounding", "category": "hallucination_grounding", "severity": "high"}, {"finding_id": "r06_audit", "category": "auditability", "severity": "high"}, {"finding_id": "r06_data", "category": "data_governance", "severity": "medium"}], "recommended_controls": ["retrieval_grounding", "output_validation", "human_approval", "audit_logging", "versioning"], "governance_requirements": ["risk_review", "human_decision_authority", "audit_record"], "architecture_characteristics": ["rag_appropriate", "human_approval_required"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c06_context", "claim_type": "fact", "summary": "The assistant compares submissions to procedures.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c06_review", "claim_type": "control", "summary": "Reviewers approve final findings.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev06_review_process"}]}]},
+        "multi_agent": {"summary": "Use cited review assistance; architecture specialist unavailable, so validate the design before implementation.", "identified_risks": [{"finding_id": "r06_compliance", "category": "compliance", "severity": "high"}, {"finding_id": "r06_grounding", "category": "hallucination_grounding", "severity": "high"}, {"finding_id": "r06_audit", "category": "auditability", "severity": "high"}, {"finding_id": "r06_data", "category": "data_governance", "severity": "medium"}], "recommended_controls": ["retrieval_grounding", "output_validation", "human_approval", "audit_logging", "versioning"], "governance_requirements": ["risk_review", "human_decision_authority", "audit_record"], "architecture_characteristics": ["rag_appropriate", "human_approval_required"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c06_context", "claim_type": "fact", "summary": "The assistant compares submissions to procedures.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c06_review", "claim_type": "control", "summary": "Reviewers approve final findings.", "supports": [{"source": "specialist_output", "reference_id": "f06_evidence"}]}], "run_status": "degraded", "degradation_reasons": ["architecture specialist unavailable"], "specialists": {"available_finding_ids": ["f06_evidence", "f06_risk"], "important_finding_ids": ["f06_evidence", "f06_risk"], "unavailable_specialists": ["architecture"]}, "preserved_specialist_finding_ids": ["f06_evidence", "f06_risk"], "degraded_state_acknowledged": true}
+      }
+    },
+    {
+      "case_id": "case07_human_operator_recommendation",
+      "title": "AI recommendations used by human operators",
+      "scenario_category": "human_operated_recommendation",
+      "business_context": "A fictional claims team wants ranked recommendations that adjusters may accept or reject.",
+      "industry": "Insurance",
+      "business_problem": "Support consistent triage without replacing accountable adjuster judgment.",
+      "expected_risks": [{"category": "model_risk", "severity": "high"}, {"category": "explainability", "severity": "medium"}, {"category": "human_oversight", "severity": "high"}, {"category": "hallucination_grounding", "severity": "medium"}],
+      "unacceptable_risks": ["third_party_vendor_risk"],
+      "expected_controls": ["human_approval", "model_monitoring", "output_validation", "audit_logging"],
+      "expected_governance_requirements": ["human_decision_authority", "periodic_review", "accountable_owner"],
+      "expected_architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred", "multi_agent_unnecessary"],
+      "human_oversight_expected": true,
+      "available_evidence_ids": ["ev07_operator_standard"],
+      "evidence_requirements": [{"claim_id": "c07_context", "allowed_sources": ["assessment_input"]}, {"claim_id": "c07_operator", "allowed_sources": ["retrieved_evidence", "specialist_output"], "allowed_reference_ids": ["ev07_operator_standard"], "allowed_specialist_finding_ids": ["f07_evidence"], "citation_required": true}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "A single assistive workflow is proportionate; multi-agent orchestration is unnecessary.",
+      "fixtures": {
+        "deterministic": {"summary": "Use ranked assistive recommendations with adjuster approval.", "identified_risks": [{"finding_id": "r07_model", "category": "model_risk", "severity": "high"}, {"finding_id": "r07_human", "category": "human_oversight", "severity": "high"}], "recommended_controls": ["human_approval", "output_validation", "audit_logging"], "governance_requirements": ["human_decision_authority", "accountable_owner"], "architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred", "multi_agent_unnecessary"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c07_context", "claim_type": "fact", "summary": "Adjusters accept or reject recommendations.", "supports": [{"source": "assessment_input"}]}]},
+        "single_agent": {"summary": "Use one assistive workflow with explanation, monitoring, and adjuster approval.", "identified_risks": [{"finding_id": "r07_model", "category": "model_risk", "severity": "high"}, {"finding_id": "r07_explain", "category": "explainability", "severity": "medium"}, {"finding_id": "r07_human", "category": "human_oversight", "severity": "high"}, {"finding_id": "r07_grounding", "category": "hallucination_grounding", "severity": "medium"}], "recommended_controls": ["human_approval", "model_monitoring", "output_validation", "audit_logging"], "governance_requirements": ["human_decision_authority", "periodic_review", "accountable_owner"], "architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred", "multi_agent_unnecessary"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c07_context", "claim_type": "fact", "summary": "Adjusters accept or reject recommendations.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c07_operator", "claim_type": "governance", "summary": "Adjusters retain decision authority.", "supports": [{"source": "retrieved_evidence", "reference_id": "ev07_operator_standard"}]}]},
+        "multi_agent": {"summary": "Use specialist analysis but retain a simple assistive runtime and adjuster approval.", "identified_risks": [{"finding_id": "r07_model", "category": "model_risk", "severity": "high"}, {"finding_id": "r07_explain", "category": "explainability", "severity": "medium"}, {"finding_id": "r07_human", "category": "human_oversight", "severity": "high"}, {"finding_id": "r07_grounding", "category": "hallucination_grounding", "severity": "medium"}], "recommended_controls": ["human_approval", "model_monitoring", "output_validation", "audit_logging"], "governance_requirements": ["human_decision_authority", "periodic_review", "accountable_owner"], "architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred", "multi_agent_unnecessary"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": true, "claims": [{"claim_id": "c07_context", "claim_type": "fact", "summary": "Adjusters accept or reject recommendations.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c07_operator", "claim_type": "governance", "summary": "Adjusters retain decision authority.", "supports": [{"source": "specialist_output", "reference_id": "f07_evidence"}]}], "specialists": {"available_finding_ids": ["f07_evidence", "f07_architecture", "f07_risk"], "important_finding_ids": ["f07_architecture", "f07_risk"]}, "preserved_specialist_finding_ids": ["f07_architecture", "f07_risk"]}
+      }
+    },
+    {
+      "case_id": "case08_low_risk_productivity",
+      "title": "Low-risk internal productivity assistant",
+      "scenario_category": "low_risk_productivity",
+      "business_context": "A fictional internal team wants help reformatting non-sensitive meeting notes into a standard template.",
+      "industry": "Professional services",
+      "business_problem": "Reduce clerical formatting effort for non-sensitive internal content.",
+      "expected_risks": [{"category": "privacy", "severity": "low"}, {"category": "hallucination_grounding", "severity": "low"}],
+      "unacceptable_risks": ["compliance", "third_party_vendor_risk"],
+      "expected_controls": ["data_minimization", "output_validation"],
+      "expected_governance_requirements": ["accountable_owner"],
+      "expected_architecture_characteristics": ["deterministic_sufficient", "simpler_workflow_preferred", "multi_agent_unnecessary"],
+      "human_oversight_expected": false,
+      "available_evidence_ids": [],
+      "evidence_requirements": [{"claim_id": "c08_context", "allowed_sources": ["assessment_input"]}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "This is an over-engineering test: a bounded deterministic template workflow is sufficient.",
+      "fixtures": {
+        "deterministic": {"summary": "Use a bounded template transformation.", "identified_risks": [{"finding_id": "r08_privacy", "category": "privacy", "severity": "low"}, {"finding_id": "r08_grounding", "category": "hallucination_grounding", "severity": "low"}], "recommended_controls": ["data_minimization", "output_validation"], "governance_requirements": ["accountable_owner"], "architecture_characteristics": ["deterministic_sufficient", "simpler_workflow_preferred", "multi_agent_unnecessary"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c08_context", "claim_type": "fact", "summary": "The input is non-sensitive meeting notes.", "supports": [{"source": "assessment_input"}]}]},
+        "single_agent": {"summary": "Use a single LLM workflow with bounded output validation.", "identified_risks": [{"finding_id": "r08_privacy", "category": "privacy", "severity": "low"}, {"finding_id": "r08_grounding", "category": "hallucination_grounding", "severity": "low"}], "recommended_controls": ["data_minimization", "output_validation"], "governance_requirements": ["accountable_owner"], "architecture_characteristics": ["simpler_workflow_preferred", "multi_agent_unnecessary", "agent_workflow_justified"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c08_context", "claim_type": "fact", "summary": "The input is non-sensitive meeting notes.", "supports": [{"source": "assessment_input"}]}]},
+        "multi_agent": {"summary": "Use multiple specialists to format notes.", "identified_risks": [{"finding_id": "r08_privacy", "category": "privacy", "severity": "low"}, {"finding_id": "r08_grounding", "category": "hallucination_grounding", "severity": "low"}, {"finding_id": "r08_compliance", "category": "compliance", "severity": "medium"}], "recommended_controls": ["data_minimization", "output_validation"], "governance_requirements": ["accountable_owner"], "architecture_characteristics": ["multi_agent_justified"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c08_context", "claim_type": "fact", "summary": "The input is non-sensitive meeting notes.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c08_invented_mandate", "claim_type": "governance", "summary": "A fictional mandate requires four agents.", "supports": []}], "specialists": {"available_finding_ids": ["f08_evidence", "f08_architecture", "f08_risk"], "important_finding_ids": ["f08_architecture"]}, "preserved_specialist_finding_ids": ["f08_architecture"]}
+      }
+    },
+    {
+      "case_id": "case09_insufficient_information",
+      "title": "Insufficient evidence for policy-specific conclusions",
+      "scenario_category": "insufficient_information",
+      "business_context": "A fictional company asks whether an unspecified assistant complies with an unnamed internal policy but provides no policy or data-flow details.",
+      "industry": "Financial services",
+      "business_problem": "Advise on architecture despite missing policy, data classification, user, and integration information.",
+      "expected_risks": [{"category": "privacy", "severity": "high"}, {"category": "security", "severity": "high"}, {"category": "data_governance", "severity": "high"}],
+      "unacceptable_risks": ["third_party_vendor_risk"],
+      "expected_controls": ["human_approval", "escalation", "data_minimization"],
+      "expected_governance_requirements": ["risk_review", "data_use_approval", "accountable_owner"],
+      "expected_architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred"],
+      "human_oversight_expected": true,
+      "available_evidence_ids": [],
+      "evidence_requirements": [{"claim_id": "c09_context", "allowed_sources": ["assessment_input"]}],
+      "abstention": {"expectation": "required", "uncertainty_acknowledgment_required": true, "validation_recommendation_required": true},
+      "evaluation_notes": "The assessment must not invent policy requirements and should request missing evidence.",
+      "fixtures": {
+        "deterministic": {"summary": "Insufficient information; validate policy and data flow before design.", "identified_risks": [{"finding_id": "r09_privacy", "category": "privacy", "severity": "high"}], "recommended_controls": ["human_approval", "escalation"], "governance_requirements": ["risk_review", "accountable_owner"], "architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": true, "validation_recommended": true, "claims": [{"claim_id": "c09_context", "claim_type": "fact", "summary": "Policy and data-flow details are missing.", "supports": [{"source": "assessment_input"}]}]},
+        "single_agent": {"summary": "Insufficient information; obtain policy, users, data, and integrations before recommending architecture.", "identified_risks": [{"finding_id": "r09_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r09_security", "category": "security", "severity": "high"}, {"finding_id": "r09_data", "category": "data_governance", "severity": "high"}], "recommended_controls": ["human_approval", "escalation", "data_minimization"], "governance_requirements": ["risk_review", "data_use_approval", "accountable_owner"], "architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": true, "validation_recommended": true, "claims": [{"claim_id": "c09_context", "claim_type": "fact", "summary": "Policy and data-flow details are missing.", "supports": [{"source": "assessment_input"}]}]},
+        "multi_agent": {"summary": "Evidence was unavailable; no policy-specific conclusion is supportable and human validation is required.", "identified_risks": [{"finding_id": "r09_privacy", "category": "privacy", "severity": "high"}, {"finding_id": "r09_security", "category": "security", "severity": "high"}, {"finding_id": "r09_data", "category": "data_governance", "severity": "high"}], "recommended_controls": ["human_approval", "escalation", "data_minimization"], "governance_requirements": ["risk_review", "data_use_approval", "accountable_owner"], "architecture_characteristics": ["human_approval_required", "simpler_workflow_preferred"], "human_oversight_recommended": true, "uncertainty_acknowledged": true, "abstained_from_unsupported_conclusion": true, "validation_recommended": true, "claims": [{"claim_id": "c09_context", "claim_type": "fact", "summary": "Policy and data-flow details are missing.", "supports": [{"source": "assessment_input"}]}], "run_status": "degraded", "degradation_reasons": ["evidence specialist unavailable"], "specialists": {"available_finding_ids": ["f09_architecture", "f09_risk"], "important_finding_ids": ["f09_architecture", "f09_risk"], "unavailable_specialists": ["evidence"]}, "preserved_specialist_finding_ids": ["f09_architecture", "f09_risk"], "degraded_state_acknowledged": true}
+      }
+    },
+    {
+      "case_id": "case10_simple_rules_workflow",
+      "title": "Simple deterministic rules workflow",
+      "scenario_category": "simple_deterministic",
+      "business_context": "A fictional back-office team needs to rename validated files using a fixed lookup table.",
+      "industry": "General enterprise",
+      "business_problem": "Apply stable naming rules to validated non-sensitive files.",
+      "expected_risks": [{"category": "operational_risk", "severity": "low"}],
+      "unacceptable_risks": ["compliance", "model_risk", "third_party_vendor_risk"],
+      "expected_controls": ["output_validation", "fallback_behavior"],
+      "expected_governance_requirements": ["accountable_owner"],
+      "expected_architecture_characteristics": ["deterministic_sufficient", "simpler_workflow_preferred", "multi_agent_unnecessary"],
+      "human_oversight_expected": false,
+      "available_evidence_ids": [],
+      "evidence_requirements": [{"claim_id": "c10_context", "allowed_sources": ["assessment_input"]}],
+      "abstention": {"expectation": "not_required"},
+      "evaluation_notes": "The expected recommendation is ordinary deterministic code, not an LLM or agent workflow.",
+      "fixtures": {
+        "deterministic": {"summary": "Use deterministic lookup and validation code.", "identified_risks": [{"finding_id": "r10_operations", "category": "operational_risk", "severity": "low"}], "recommended_controls": ["output_validation", "fallback_behavior"], "governance_requirements": ["accountable_owner"], "architecture_characteristics": ["deterministic_sufficient", "simpler_workflow_preferred", "multi_agent_unnecessary"], "human_oversight_recommended": false, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c10_context", "claim_type": "fact", "summary": "The transformation follows a fixed lookup table.", "supports": [{"source": "assessment_input"}]}]},
+        "single_agent": {"summary": "Use an LLM agent to select file names.", "identified_risks": [{"finding_id": "r10_operations", "category": "operational_risk", "severity": "medium"}, {"finding_id": "r10_model", "category": "model_risk", "severity": "medium"}], "recommended_controls": ["output_validation", "fallback_behavior"], "governance_requirements": ["accountable_owner"], "architecture_characteristics": ["agent_workflow_justified"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c10_context", "claim_type": "fact", "summary": "The transformation follows a fixed lookup table.", "supports": [{"source": "assessment_input"}]}]},
+        "multi_agent": {"summary": "Use multiple agents to debate each deterministic rename.", "identified_risks": [{"finding_id": "r10_operations", "category": "operational_risk", "severity": "high"}, {"finding_id": "r10_compliance", "category": "compliance", "severity": "high"}], "recommended_controls": ["output_validation", "fallback_behavior"], "governance_requirements": ["accountable_owner", "risk_review"], "architecture_characteristics": ["multi_agent_justified"], "human_oversight_recommended": true, "uncertainty_acknowledged": false, "abstained_from_unsupported_conclusion": false, "validation_recommended": false, "claims": [{"claim_id": "c10_context", "claim_type": "fact", "summary": "The transformation follows a fixed lookup table.", "supports": [{"source": "assessment_input"}]}, {"claim_id": "c10_invented_policy", "claim_type": "governance", "summary": "A fictional policy mandates multi-agent review.", "supports": []}], "specialists": {"available_finding_ids": ["f10_evidence", "f10_architecture", "f10_risk"], "important_finding_ids": ["f10_architecture"]}, "preserved_specialist_finding_ids": ["f10_architecture"]}
+      }
+    }
+  ]
+}

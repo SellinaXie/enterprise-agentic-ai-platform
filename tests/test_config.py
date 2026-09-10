@@ -34,6 +34,8 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.evidence_agent_max_tool_calls == 4
     assert settings.multi_agent_max_failures == 2
     assert settings.specialist_retry_limit == 1
+    assert settings.evaluation_llm_judge_enabled is False
+    assert settings.evaluation_judge_model == "gpt-4.1-mini"
     assert settings.knowledge_graph_enabled is False
     assert settings.graph_max_depth == 2
     assert settings.graph_max_entities == 20

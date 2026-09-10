@@ -1,1 +1,1 @@
-"""Version-controlled synthetic benchmark data packaged with V7A."""
+"""Version-controlled synthetic V7A and V7B benchmark data."""

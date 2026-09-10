@@ -1,1 +1,1 @@
-"""Deterministic V7A retrieval and provenance evaluation components."""
+"""V7A retrieval and V7B assessment-quality evaluation components."""
