@@ -19,11 +19,16 @@ from app.core.exceptions import (
     AssessmentNotFoundError,
     DatabaseNotConfiguredError,
     DatabaseUnavailableError,
+    DocumentParseError,
     EmbeddingNotConfiguredError,
     EmbeddingProviderError,
+    EmptyFileError,
     EmptyKnowledgeDocumentError,
+    EncryptedPDFError,
+    FileTooLargeError,
     InvalidEmbeddingError,
     InvalidLLMResponseError,
+    InvalidUploadMetadataError,
     KnowledgeDocumentNotFoundError,
     KnowledgeGraphDisabledError,
     KnowledgeGraphExtractionError,
@@ -32,8 +37,11 @@ from app.core.exceptions import (
     KnowledgePersistenceError,
     KnowledgeStoreUnavailableError,
     LLMProviderError,
+    OCRRequiredError,
     OpenAIClientNotConfiguredError,
     PersistenceError,
+    TextDecodeError,
+    UnsupportedFileTypeError,
 )
 from app.core.logging import configure_logging
 from app.schemas.errors import ErrorDetail, ErrorResponse
@@ -86,6 +94,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             KnowledgeGraphExtractionError: status.HTTP_502_BAD_GATEWAY,
             KnowledgeGraphPersistenceError: status.HTTP_503_SERVICE_UNAVAILABLE,
             KnowledgeGraphUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            UnsupportedFileTypeError: status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            FileTooLargeError: status.HTTP_413_CONTENT_TOO_LARGE,
+            EmptyFileError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            InvalidUploadMetadataError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            DocumentParseError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            EncryptedPDFError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            OCRRequiredError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+            TextDecodeError: status.HTTP_422_UNPROCESSABLE_CONTENT,
         }
         payload = ErrorResponse(error=ErrorDetail(code=exc.error_code, message=exc.public_message))
         return JSONResponse(

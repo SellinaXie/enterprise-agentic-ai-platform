@@ -69,6 +69,17 @@ class KnowledgeDocumentRepository:
         model = self._session.get(KnowledgeDocumentModel, document_id)
         return _to_record(model) if model is not None else None
 
+    def find_by_content_hash(self, content_hash: str) -> KnowledgeDocumentRecord | None:
+        """Return the earliest normalized document with this existing SHA-256 identity."""
+        statement = (
+            select(KnowledgeDocumentModel)
+            .where(KnowledgeDocumentModel.content_hash == content_hash)
+            .order_by(KnowledgeDocumentModel.created_at, KnowledgeDocumentModel.id)
+            .limit(1)
+        )
+        model = self._session.scalar(statement)
+        return _to_record(model) if model is not None else None
+
     def list(self, *, limit: int = 100) -> list[KnowledgeDocumentRecord]:
         statement = (
             select(KnowledgeDocumentModel)

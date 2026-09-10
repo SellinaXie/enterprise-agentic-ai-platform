@@ -1,8 +1,61 @@
 # Enterprise AI Transformation Advisor
 
-Production-minded V6 backend for grounded enterprise AI assessments. V6 preserves the complete
-V1-V5 behavior and adds an opt-in relational knowledge graph, source-grounded extraction, bounded
-graph traversal, and hybrid vector-plus-graph GraphRAG in the existing PostgreSQL database.
+Production-minded V6.5 backend for grounded enterprise AI assessments. V6.5 preserves the complete
+V1-V6 behavior and adds a bounded enterprise-document adapter for PDF, DOCX, UTF-8 text, and
+Markdown. Parsed text and provenance flow into the existing V3 vector pipeline and optional V6
+graph enrichment; neither pipeline is duplicated.
+
+## V6.5 enterprise document ingestion
+
+```text
+Multipart file upload
+        │
+        ▼
+size + filename + extension + MIME + signature validation
+        │
+        ▼
+parser router ──→ PDF | DOCX | UTF-8 TXT | Markdown
+        │
+        ▼
+ParsedDocument (normalized source text + provenance segments)
+        │
+        ▼
+existing V3 normalization → content hash → chunk → embed → persist
+        │
+        └── optional existing V6 graph enrichment
+        │
+        ▼
+vector RAG / hybrid GraphRAG → Evidence Agent
+```
+
+`POST /api/v1/knowledge/files` accepts multipart uploads while the existing
+`POST /api/v1/knowledge/documents` plain-text API remains unchanged. The adapter allowlists file
+types, reads no more than the configured byte limit, validates lightweight format signatures,
+extracts text and provenance, and delegates normalization, chunking, embeddings, transactions,
+and persistence to the existing V3 service. File ingestion enables normalized SHA-256 content
+deduplication, so equivalent extracted text reuses the first stored document and its embeddings.
+
+PDF extraction supports digitally generated PDFs and records page provenance. Image-only or
+insufficiently extractable PDFs return the explicit `ocr_required` error; V6.5 performs no OCR or
+image understanding. DOCX parsing preserves headings, paragraph order, and table text. Markdown
+keeps headings, paragraphs, lists, and fenced code as source text while recording section headings.
+TXT accepts strict UTF-8, including a UTF-8 BOM, and preserves meaningful line structure before
+the shared normalizer runs.
+
+Original file bytes and temporary paths are never persisted. Client filenames are reduced to a
+safe basename and treated as display metadata, not a filesystem destination. Extension, reported
+MIME type, and signatures must agree. Uploaded content remains untrusted evidence: it is not
+executed and receives the existing RAG and agent prompt-injection boundaries.
+
+### V6.5 portfolio status
+
+Implemented: plain-text, PDF, DOCX, TXT, and Markdown ingestion; metadata and provenance
+extraction; vector RAG; GraphRAG; and the existing multi-agent workflows.
+
+Current limitation: image-only and scanned PDFs require OCR and are not supported by V6.5.
+
+Planned: formal evaluation and observability in V7, productionization in V8, and MCP or external
+enterprise integrations only where later evidence justifies them.
 
 ## V6 capability
 
@@ -276,6 +329,10 @@ small source references when the model cites retrieved evidence.
 - `pip`
 - An OpenAI API key for live embedding and assessment generation
 
+V6.5 adds only three runtime dependencies: `pypdf` for digitally encoded PDF text,
+`python-docx` for OOXML Word content, and `python-multipart` for FastAPI multipart form parsing.
+There is no OCR, spreadsheet, presentation, cloud-storage, or document-AI dependency.
+
 ## Local setup
 
 ```bash
@@ -323,6 +380,8 @@ RAG_CHUNK_SIZE=1200
 RAG_CHUNK_OVERLAP=200
 RAG_RETRIEVAL_TOP_K=5
 RAG_SIMILARITY_THRESHOLD=0.35
+MAX_UPLOAD_SIZE_MB=10
+PDF_MIN_EXTRACTED_CHARACTERS=100
 
 KNOWLEDGE_GRAPH_ENABLED=false
 GRAPH_MAX_DEPTH=2
@@ -348,6 +407,10 @@ SPECIALIST_RETRY_LIMIT=1
   line, then word boundaries. A 1,200/200 baseline keeps context units readable while retaining
   boundary continuity without adding a tokenizer dependency.
 - Retrieval uses cosine similarity and filters results below 0.35 before returning at most five.
+- `MAX_UPLOAD_SIZE_MB=10` is a hard multipart file-content limit. Uploads are read incrementally
+  and rejected as soon as the limit is exceeded.
+- `PDF_MIN_EXTRACTED_CHARACTERS=100` is the conservative threshold below which a non-empty PDF is
+  treated as needing OCR rather than accepted as useful text.
 - `RAG_ENABLED=false` preserves request-only assessment behavior until pgvector is migrated and
   knowledge has been ingested. Set it to `true` to add retrieval to assessment generation.
 - When retrieval returns no qualifying evidence, assessment generation continues from the request
@@ -385,9 +448,51 @@ curl -X POST http://127.0.0.1:8000/api/v1/knowledge/documents \
 The service normalizes line endings and excess blank lines without summarizing or rewriting the
 source, stores the document, creates overlapping chunks, batches embedding requests, validates all
 vector dimensions, stores the chunks, and commits the operation atomically.
-`GET /api/v1/knowledge/documents/{document_id}` returns the normalized stored document.
+`GET /api/v1/knowledge/documents/{document_id}` returns the normalized stored document. This
+lower-level JSON endpoint remains available for backward compatibility.
 
-V3 intentionally accepts plain text only. It does not add file upload, PDF parsing, or OCR.
+Upload an allowlisted enterprise document as multipart form-data:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/knowledge/files \
+  -F 'file=@policy.pdf;type=application/pdf' \
+  -F 'title=AI Governance Policy' \
+  -F 'source_type=policy' \
+  -F 'metadata={"department":"risk"}' \
+  -F 'enrich_graph=false'
+```
+
+The response identifies the stored document, parser, extraction method, normalized character and
+chunk counts, duplicate status, and optional graph-enrichment outcome. `source_type` is the
+existing semantic classification (`policy`, `regulation`, `procedure`, and so on); it is separate
+from the parser-controlled `file_format` provenance.
+
+| Format | Accepted extension/MIME | Parser | Preserved provenance | Current limitation |
+| --- | --- | --- | --- | --- |
+| PDF | `.pdf`, `application/pdf` | `pypdf` | page count and per-chunk source pages | text-based PDFs only; image-only/scanned PDFs return `ocr_required` |
+| DOCX | `.docx`, OOXML Word MIME | `python-docx` | headings, paragraph/table order, sections | legacy `.doc`, tracked-change interpretation, and image text are unsupported |
+| TXT | `.txt`, `text/plain` | strict UTF-8 decoder | filename, MIME, parser metadata | non-UTF-8 files are rejected |
+| Markdown | `.md`/`.markdown`, Markdown or safe plain-text MIME | Markdown text parser | headings/sections with original lists and fenced code | no rendered-DOM or embedded-image extraction |
+
+Every adapter returns the closed, format-neutral `ParsedDocument` contract. `text` is the extracted
+content passed to V3 normalization; `title`, `filename`, `mime_type`, `file_format`, and semantic
+`source_type` identify the knowledge source; optional `page_count` and `sections` describe source
+structure; `parser_name`, optional `parser_version`, and `extraction_method` explain how the text
+was obtained; `metadata` carries bounded parser facts; and `segments` map page or section context
+onto the existing chunks. Format-specific fields remain optional.
+
+The service never writes an upload to a temporary file and never stores its original bytes. It
+persists only normalized text and bounded JSONB provenance. Equivalent normalized content is
+deduplicated by SHA-256 before new embeddings are requested. PDF page and DOCX/Markdown section
+segments are mapped onto overlapping chunks in `knowledge_chunks.metadata`; because existing JSONB
+columns are reused, V6.5 requires no schema migration. The shared chunker may span adjacent PDF
+pages; such a chunk records the contributing `source_pages` and inclusive page range rather than
+creating a second page-specific chunking algorithm.
+
+A duplicate returns the earliest existing document reference with `duplicate=true`, its existing
+chunk count, and no new embedding call. The current request filename remains visible in the upload
+response, while normalized knowledge identity and the original stored provenance remain attached
+to the reused document.
 
 After ingesting a document, opt in to V6 and extract its graph from the already stored chunks:
 
@@ -397,8 +502,10 @@ curl -X POST \
 ```
 
 This synchronous endpoint is idempotent for deterministically identical entities, mentions, and
-source-grounded relationships. The document must already exist; it does not upload, parse, or
-replace source content.
+source-grounded relationships. File clients may instead set `enrich_graph=true` on upload. Vector
+ingestion commits first; graph enrichment then reuses that document. If graph enrichment fails,
+the response reports a safe degraded status and error code while the V3 document and chunks remain
+available.
 
 ## Retrieval
 
@@ -468,6 +575,9 @@ TIMESTAMPTZ values, controlled-vocabulary checks, confidence checks, uniqueness 
 cascading provenance foreign keys, a no-self-edge constraint, and traversal indexes. Downgrade
 removes only these three V6 tables in dependency-safe order.
 
+V6.5 adds no tables or columns. File format, parser, extraction, page, and section provenance fit
+the existing document/chunk JSONB metadata model, so Alembic head remains `20260910_0004`.
+
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
 pgvector operators.
@@ -497,6 +607,12 @@ V6 tests add extraction-contract rejection, conservative entity resolution, sour
 relationship persistence, bounded traversal, vector/graph merge labels, independent fallback
 paths, GraphRAG context boundaries, Evidence Agent-only permissions, feature-flag compatibility,
 safe execution metadata, endpoint behavior, and an optional live PostgreSQL graph round trip.
+V6.5 adds deterministic in-memory PDF and DOCX fixtures plus TXT and Markdown bytes. Tests cover
+all parsers, extension/MIME/signature routing, malformed and encrypted PDFs, explicit OCR-required
+behavior, strict UTF-8, empty extraction, filename safety, upload bounds, multipart responses,
+metadata and chunk provenance, normalized deduplication, unchanged plain-text ingestion, optional
+graph degradation, real graph enrichment, retrieval/Evidence Agent compatibility, and PostgreSQL
+JSONB provenance. All OpenAI embedding and structured-output boundaries remain mocked.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -522,21 +638,28 @@ V6 also checks migration and graph-table creation plus UUID, JSONB, timezone-awa
 entity, mention, relationship, provenance, and bounded traversal behavior against the same guarded
 test database. All fixtures are synthetic; no external knowledge dataset is required.
 
+V6.5 adds a PostgreSQL round trip for file-origin document metadata, chunk page provenance, and
+normalized deduplication without requiring a binary fixture or external dataset in the database.
+
 Do not run multiple test processes against the same test database. Run only fast tests with:
 
 ```bash
 pytest -m "not postgres"
 ```
 
-## V6 scope boundary
+## V6.5 scope boundary
 
-V6 is a controlled, source-grounded relational graph and GraphRAG increment—not a general graph or
-autonomous-agent platform. Implemented now: PostgreSQL graph tables, constrained per-chunk
-extraction, conservative entity resolution, provenance, bounded traversal, hybrid retrieval,
-GraphRAG context, the Evidence Agent graph tool, safe fallbacks, settings, API enrichment, tests,
-and documentation.
+V6.5 is a synchronous enterprise-document adapter, not a document-management or arbitrary-content
+platform. Implemented now: multipart PDF/DOCX/TXT/Markdown upload, bounded validation, explicit
+parsers, normalized text and page/section provenance, reuse of V3 vector ingestion and
+deduplication, optional V6 enrichment, safe degraded graph behavior, and synthetic tests.
 
-Still planned or explicitly out of scope: PDF/DOCX parsing, OCR, browser or file upload, external
-datasets, Neo4j, Cypher, arbitrary graph queries, graph visualization UI, evaluation frameworks,
-LangSmith, MCP, Docker, CI/CD, authentication, deployment, asynchronous extraction jobs, generalized
-agent memory, and human-in-the-loop pause/resume infrastructure. V6.5 has not been started.
+Known limitations: scanned/image-only PDFs need OCR and return `ocr_required`; file ingestion is
+synchronous and memory-bounded rather than a background job; legacy Word, spreadsheets,
+presentations, image understanding, archive ingestion, web crawling, and external enterprise
+connectors such as Google Drive or SharePoint are not implemented. Formal RAG, GraphRAG, agent,
+LLM-as-judge, cost, and latency evaluation plus an observability platform remain deferred to V7.
+Production deployment infrastructure—including Docker, CI/CD, authentication, authorization,
+malware scanning, object storage, queues, and frontend UI—remains deferred to V8 or later. MCP and
+LangSmith are not included. Existing read-only tool allowlists and per-agent permissions are
+unchanged; uploaded text cannot grant tools or alter agent roles.

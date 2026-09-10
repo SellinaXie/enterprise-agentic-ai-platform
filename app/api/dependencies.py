@@ -16,6 +16,14 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.graph.multi_agent_workflow import MultiAgentAssessmentWorkflow
 from app.graph.workflow import AgenticAssessmentWorkflow
+from app.ingestion.parsers import (
+    DOCXDocumentParser,
+    MarkdownDocumentParser,
+    PDFDocumentParser,
+    TextDocumentParser,
+)
+from app.ingestion.router import DocumentParserRouter
+from app.ingestion.service import FileIngestionService
 from app.knowledge_graph.enrichment import KnowledgeGraphEnrichmentService
 from app.knowledge_graph.extraction import OpenAIEntityExtractor, OpenAIRelationshipExtractor
 from app.knowledge_graph.hybrid import HybridRAGService, HybridRetrievalService
@@ -104,6 +112,20 @@ def get_knowledge_ingestion_service(
     )
 
 
+def get_file_parser_router(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DocumentParserRouter:
+    """Build the hard-allowlisted V6.5 parser router."""
+    return DocumentParserRouter(
+        [
+            PDFDocumentParser(min_extracted_characters=settings.pdf_min_extracted_characters),
+            DOCXDocumentParser(),
+            TextDocumentParser(),
+            MarkdownDocumentParser(),
+        ]
+    )
+
+
 def get_retrieval_service(
     chunks: Annotated[KnowledgeChunkRepository, Depends(get_knowledge_chunk_repository)],
     embeddings: Annotated[OpenAIEmbeddingsService, Depends(get_embeddings_service)],
@@ -184,6 +206,27 @@ def get_graph_enrichment_service(
             structured,
             min_confidence=settings.graph_min_confidence,
         ),
+    )
+
+
+def get_file_ingestion_service(
+    parsers: Annotated[DocumentParserRouter, Depends(get_file_parser_router)],
+    knowledge: Annotated[
+        KnowledgeIngestionService,
+        Depends(get_knowledge_ingestion_service),
+    ],
+    graph: Annotated[
+        KnowledgeGraphEnrichmentService | None,
+        Depends(get_graph_enrichment_service),
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> FileIngestionService:
+    """Adapt validated file content into the existing V3 and optional V6 services."""
+    return FileIngestionService(
+        parsers=parsers,
+        knowledge=knowledge,
+        graph=graph,
+        max_upload_size_bytes=settings.max_upload_size_mb * 1024 * 1024,
     )
 
 

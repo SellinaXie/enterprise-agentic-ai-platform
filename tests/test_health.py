@@ -10,7 +10,7 @@ def test_health_check(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.7.0"}
+    assert response.json() == {"status": "ok", "version": "0.7.5"}
     assert response.headers["x-request-id"]
 
 
@@ -29,4 +29,4 @@ def test_health_does_not_require_database_configuration() -> None:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "version": "0.7.0"}
+    assert response.json() == {"status": "ok", "version": "0.7.5"}

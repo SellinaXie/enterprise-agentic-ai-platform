@@ -144,3 +144,59 @@ class KnowledgeGraphUnavailableError(ApplicationError):
 
     error_code = "knowledge_graph_unavailable"
     public_message = "Knowledge graph retrieval is temporarily unavailable. Please try again."
+
+
+class UnsupportedFileTypeError(ApplicationError):
+    """Raised when upload extension, MIME type, or signature is not allowlisted."""
+
+    error_code = "unsupported_file_type"
+    public_message = "The uploaded file type is not supported or does not match its content."
+
+
+class FileTooLargeError(ApplicationError):
+    """Raised before an upload grows beyond the configured in-memory limit."""
+
+    error_code = "file_too_large"
+    public_message = "The uploaded file exceeds the configured size limit."
+
+
+class EmptyFileError(ApplicationError):
+    """Raised when an upload contains no bytes."""
+
+    error_code = "empty_file"
+    public_message = "The uploaded file is empty."
+
+
+class InvalidUploadMetadataError(ApplicationError):
+    """Raised when multipart metadata is not a valid bounded JSON object."""
+
+    error_code = "invalid_upload_metadata"
+    public_message = "Upload metadata must be a valid JSON object."
+
+
+class DocumentParseError(ApplicationError):
+    """Raised when an allowlisted document cannot be parsed safely."""
+
+    error_code = "document_parse_failed"
+    public_message = "The uploaded document could not be parsed."
+
+
+class EncryptedPDFError(ApplicationError):
+    """Raised when an encrypted PDF cannot be processed without credentials."""
+
+    error_code = "encrypted_pdf"
+    public_message = "Encrypted PDF files are not supported."
+
+
+class OCRRequiredError(ApplicationError):
+    """Raised when a PDF has insufficient digitally extractable text."""
+
+    error_code = "ocr_required"
+    public_message = "The PDF requires OCR because it has insufficient extractable text."
+
+
+class TextDecodeError(ApplicationError):
+    """Raised when a text upload is not valid UTF-8."""
+
+    error_code = "text_decode_failed"
+    public_message = "The text document is not valid UTF-8."

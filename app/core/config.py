@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     graph_max_entities: int = Field(default=20, ge=1, le=100)
     graph_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
 
+    max_upload_size_mb: int = Field(default=10, ge=1, le=100)
+    pdf_min_extracted_characters: int = Field(default=100, ge=1, le=10_000)
+
     agentic_workflow_enabled: bool = False
     agent_max_steps: int = Field(default=5, ge=1, le=50)
     agent_max_tool_calls: int = Field(default=5, ge=1, le=50)

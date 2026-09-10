@@ -38,6 +38,8 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.graph_max_depth == 2
     assert settings.graph_max_entities == 20
     assert settings.graph_min_confidence == 0.5
+    assert settings.max_upload_size_mb == 10
+    assert settings.pdf_min_extracted_characters == 100
 
 
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:
@@ -60,5 +62,14 @@ def test_agentic_recursion_limit_must_cover_bounded_graph_path() -> None:
     [("GRAPH_MAX_DEPTH", 0), ("GRAPH_MAX_ENTITIES", 0), ("GRAPH_MIN_CONFIDENCE", 1.1)],
 )
 def test_graph_bounds_are_validated(name: str, value: float) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{name: value})
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("MAX_UPLOAD_SIZE_MB", 0), ("PDF_MIN_EXTRACTED_CHARACTERS", 0)],
+)
+def test_file_ingestion_bounds_are_validated(name: str, value: int) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **{name: value})

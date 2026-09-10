@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+from collections.abc import Sequence
 from typing import NoReturn
 from uuid import UUID, uuid4
 
@@ -19,6 +20,7 @@ from app.models.knowledge import (
     EmbeddedChunk,
     KnowledgeDocumentRecord,
     KnowledgeIngestionResult,
+    KnowledgeSourceSegment,
 )
 from app.rag.chunking import chunk_text, normalize_text
 from app.rag.embeddings import EmbeddingsService
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class KnowledgeIngestionService:
-    """Coordinate one transactional plain-text ingestion operation."""
+    """Coordinate one transactional normalized-text ingestion operation."""
 
     def __init__(
         self,
@@ -47,7 +49,13 @@ class KnowledgeIngestionService:
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
 
-    def ingest(self, request: KnowledgeDocumentCreate) -> KnowledgeIngestionResult:
+    def ingest(
+        self,
+        request: KnowledgeDocumentCreate,
+        *,
+        deduplicate: bool = False,
+        source_segments: Sequence[KnowledgeSourceSegment] = (),
+    ) -> KnowledgeIngestionResult:
         """Normalize and persist a document and all embedded chunks atomically."""
         document_id = uuid4()
         log_context = {"document_id": str(document_id)}
@@ -59,6 +67,19 @@ class KnowledgeIngestionService:
         content_hash = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
         try:
+            if deduplicate:
+                existing = self._documents.find_by_content_hash(content_hash)
+                if existing is not None:
+                    existing_chunks = self._chunks.list_by_document(existing.document_id)
+                    logger.info(
+                        "document_duplicate_detected",
+                        extra={"document_id": str(existing.document_id)},
+                    )
+                    return KnowledgeIngestionResult(
+                        document=existing,
+                        chunk_count=len(existing_chunks),
+                        duplicate=True,
+                    )
             document = self._documents.create(
                 document_id=document_id,
                 title=request.title,
@@ -90,12 +111,20 @@ class KnowledgeIngestionService:
                 "embeddings_generated",
                 extra={**log_context, "chunk_count": len(vectors)},
             )
+            provenance_spans = _build_provenance_spans(normalized, source_segments)
             embedded_chunks = [
                 EmbeddedChunk(
                     chunk_index=chunk.index,
                     content=chunk.content,
                     embedding=vector,
-                    metadata={"content_hash": hashlib.sha256(chunk.content.encode()).hexdigest()},
+                    metadata={
+                        "content_hash": hashlib.sha256(chunk.content.encode()).hexdigest(),
+                        **_chunk_provenance(
+                            chunk.start_offset,
+                            chunk.end_offset,
+                            provenance_spans,
+                        ),
+                    },
                 )
                 for chunk, vector in zip(text_chunks, vectors, strict=True)
             ]
@@ -135,3 +164,51 @@ class KnowledgeIngestionService:
         if isinstance(exc, (OperationalError, ProgrammingError)):
             raise KnowledgeStoreUnavailableError from exc
         raise KnowledgePersistenceError from exc
+
+
+def _build_provenance_spans(
+    normalized: str,
+    source_segments: Sequence[KnowledgeSourceSegment],
+) -> list[tuple[int, int, dict[str, object]]]:
+    """Locate parser segments in normalized text without changing V3 chunking behavior."""
+    spans = []
+    cursor = 0
+    for segment in source_segments:
+        segment_text = normalize_text(segment.text)
+        if not segment_text:
+            continue
+        start = normalized.find(segment_text, cursor)
+        if start < 0:
+            continue
+        end = start + len(segment_text)
+        spans.append((start, end, dict(segment.metadata)))
+        cursor = end
+    return spans
+
+
+def _chunk_provenance(
+    chunk_start: int,
+    chunk_end: int,
+    spans: list[tuple[int, int, dict[str, object]]],
+) -> dict[str, object]:
+    overlapping = [
+        metadata for start, end, metadata in spans if chunk_start < end and chunk_end > start
+    ]
+    pages = sorted(
+        {int(page) for metadata in overlapping if (page := metadata.get("page_number")) is not None}
+    )
+    sections = list(
+        dict.fromkeys(
+            str(section) for metadata in overlapping if (section := metadata.get("section_heading"))
+        )
+    )
+    provenance: dict[str, object] = {}
+    if pages:
+        provenance.update(
+            source_pages=pages,
+            source_page_start=pages[0],
+            source_page_end=pages[-1],
+        )
+    if sections:
+        provenance["source_sections"] = sections
+    return provenance

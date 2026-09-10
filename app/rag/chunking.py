@@ -9,6 +9,8 @@ class TextChunk:
 
     index: int
     content: str
+    start_offset: int
+    end_offset: int
 
 
 def normalize_text(raw_text: str) -> str:
@@ -53,9 +55,21 @@ def chunk_text(text: str, *, chunk_size: int, overlap: int) -> list[TextChunk]:
             if boundary >= search_start:
                 end = boundary
 
-        content = normalized[start:end].strip()
+        candidate = normalized[start:end]
+        leading_characters = len(candidate) - len(candidate.lstrip())
+        trailing_characters = len(candidate) - len(candidate.rstrip())
+        content_start = start + leading_characters
+        content_end = end - trailing_characters
+        content = normalized[content_start:content_end]
         if content:
-            chunks.append(TextChunk(index=len(chunks), content=content))
+            chunks.append(
+                TextChunk(
+                    index=len(chunks),
+                    content=content,
+                    start_offset=content_start,
+                    end_offset=content_end,
+                )
+            )
         if end >= len(normalized):
             break
         next_start = max(end - overlap, start + 1)

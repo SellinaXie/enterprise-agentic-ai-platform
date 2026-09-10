@@ -67,6 +67,14 @@ class EmbeddedChunk:
 
 
 @dataclass(frozen=True, slots=True)
+class KnowledgeSourceSegment:
+    """Parser-provided source block used only to attribute generated chunks."""
+
+    text: str
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class RetrievedEvidence:
     """Ranked source evidence returned by vector retrieval."""
 
@@ -95,3 +103,4 @@ class KnowledgeIngestionResult:
 
     document: KnowledgeDocumentRecord
     chunk_count: int
+    duplicate: bool = False
