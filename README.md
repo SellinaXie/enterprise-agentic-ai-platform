@@ -1,9 +1,93 @@
 # Enterprise AI Transformation Advisor
 
-Production-minded V6.5 backend for grounded enterprise AI assessments. V6.5 preserves the complete
-V1-V6 behavior and adds a bounded enterprise-document adapter for PDF, DOCX, UTF-8 text, and
-Markdown. Parsed text and provenance flow into the existing V3 vector pipeline and optional V6
-graph enrichment; neither pipeline is duplicated.
+Production-minded V7A backend for grounded enterprise AI assessments. V7A preserves the complete
+V1-V6.5 behavior and adds the first, deliberately deterministic part of V7: a version-controlled
+synthetic retrieval benchmark, standard vector and graph metrics, provenance checks, and
+vector/graph/hybrid comparison. V7B answer and agent evaluation has not started.
+
+## V7A deterministic retrieval evaluation
+
+```text
+version-controlled synthetic corpus + queries + expected evidence
+                              │
+                              ▼
+                  typed benchmark validation
+                              │
+             ┌────────────────┼────────────────┐
+             ▼                ▼                ▼
+        vector service    graph service    hybrid service
+             └────────────────┼────────────────┘
+                              ▼
+ ranked evidence + entities + relationships + provenance
+                              │
+                              ▼
+ per-case metrics → macro aggregates → JSON reports + comparison
+```
+
+The benchmark at `app/evaluation/datasets/v7a_retrieval_benchmark.json` contains eight fictional
+enterprise documents, nine queries, stable document/chunk identities, controlled entities and
+relationships, known relevant evidence, expected paths, and transparent deterministic fixture
+rankings. The queries cover semantic facts, policy lookup, multiple documents, impact chains,
+multi-hop relationships, and one negative/no-answer case. None of the documents represents an
+actual company policy or regulation, and no generated embedding is stored in the dataset.
+
+Run one mode or the complete deterministic comparison without PostgreSQL, an API key, or network
+access:
+
+```bash
+python -m app.evaluation.runner --mode vector
+python -m app.evaluation.runner --mode graph
+python -m app.evaluation.runner --mode hybrid
+python -m app.evaluation.runner --all
+```
+
+Each mode writes `outputs/evaluation/v7a_<mode>.json`; `--all` also writes
+`outputs/evaluation/v7a_comparison.json`. Runtime reports are ignored by Git. They contain a UTC
+timestamp, execution profile, dataset version, compatible/skipped cases, per-case observations,
+aggregate metrics, non-secret retrieval settings, and warnings. The CLI prints the same calculated
+metrics concisely and renders unsupported comparison values as `N/A` rather than zero.
+
+### Metric definitions
+
+- **Hit Rate@K** is one when at least one unique expected document/chunk appears in the first K
+  results, otherwise zero.
+- **Precision@K** is the number of unique relevant results in the first K divided by K. The fixed K
+  denominator is retained when fewer than K results are returned.
+- **Recall@K** is the number of unique expected results retrieved in the first K divided by all
+  expected results.
+- **MRR** is the reciprocal rank of the first expected result in the evaluated top K, or zero when
+  no expected result appears.
+- **Entity Hit Rate** and **Relationship Hit Rate** are the fractions of expected entity names and
+  exact typed relationship edges present in a graph neighborhood.
+- **Path Success** is the fraction of expected bounded paths whose required typed edges all appear.
+- **Provenance Coverage** is the fraction of returned evidence and graph claims whose document,
+  chunk, title, and relationship-source identities match the version-controlled corpus.
+- **Negative-query false-positive rate** is the fraction of negative cases returning any evidence.
+  Positive rank metrics exclude negative cases, so a retriever is not rewarded for always
+  returning content.
+
+Duplicate chunk identities are counted once at their first rank. Aggregate values are macro
+averages over cases for which a metric is defined. Hybrid reports also count evidence whose origin
+is `vector`, `graph`, or `both`. Every comparison value comes from its mode report; no outcome is
+hardcoded into the comparison utility.
+
+The configuration snapshot records embedding model and dimensions, top K, similarity threshold,
+chunk size and overlap, graph depth, graph confidence, and graph entity limit. It never records API
+keys, database URLs, embeddings, source text, or prompts.
+
+The default execution profile uses explicit deterministic retrieval doubles and the real V6
+hybrid merge service. Its results validate the dataset, runner, metric formulas, provenance, and
+mode behavior; they are labeled synthetic and are not claims about live semantic quality. A live
+OpenAI/PostgreSQL evaluation was unavailable and is reported as skipped rather than fabricated.
+Retrieval evaluation is not final-answer quality evaluation.
+
+### V7A portfolio status
+
+Implemented: deterministic retrieval evaluation, vector metrics, graph retrieval metrics, hybrid
+retrieval comparison, negative-query measurement, and provenance validation.
+
+Planned: LLM output evaluation, specialist-agent evaluation, observability, and human-in-the-loop
+reliability controls in later V7 increments. V7 as a whole is not complete.
 
 ## V6.5 enterprise document ingestion
 
@@ -54,8 +138,8 @@ extraction; vector RAG; GraphRAG; and the existing multi-agent workflows.
 
 Current limitation: image-only and scanned PDFs require OCR and are not supported by V6.5.
 
-Planned: formal evaluation and observability in V7, productionization in V8, and MCP or external
-enterprise integrations only where later evidence justifies them.
+Planned: answer/agent evaluation and observability in later V7 increments, productionization in
+V8, and MCP or external enterprise integrations only where later evidence justifies them.
 
 ## V6 capability
 
@@ -578,6 +662,9 @@ removes only these three V6 tables in dependency-safe order.
 V6.5 adds no tables or columns. File format, parser, extraction, page, and section provenance fit
 the existing document/chunk JSONB metadata model, so Alembic head remains `20260910_0004`.
 
+V7A is a version-controlled benchmark and local report layer. It adds no persistence tables and no
+migration; Alembic head remains unchanged.
+
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
 pgvector operators.
@@ -613,6 +700,10 @@ behavior, strict UTF-8, empty extraction, filename safety, upload bounds, multip
 metadata and chunk provenance, normalized deduplication, unchanged plain-text ingestion, optional
 graph degradation, real graph enrichment, retrieval/Evidence Agent compatibility, and PostgreSQL
 JSONB provenance. All OpenAI embedding and structured-output boundaries remain mocked.
+V7A adds network-free tests for perfect, partial, empty, duplicate, over-K, and negative retrieval;
+dataset integrity; entity, relationship, path, and provenance metrics; invented-identity rejection;
+all three retrieval modes; incompatible-case skips; non-secret configuration snapshots; JSON
+serialization; comparison alignment; CLI output; and repeatability. No provider call is made.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -647,19 +738,16 @@ Do not run multiple test processes against the same test database. Run only fast
 pytest -m "not postgres"
 ```
 
-## V6.5 scope boundary
+## V7A scope boundary
 
-V6.5 is a synchronous enterprise-document adapter, not a document-management or arbitrary-content
-platform. Implemented now: multipart PDF/DOCX/TXT/Markdown upload, bounded validation, explicit
-parsers, normalized text and page/section provenance, reuse of V3 vector ingestion and
-deduplication, optional V6 enrichment, safe degraded graph behavior, and synthetic tests.
+V7A evaluates deterministic retrieval and provenance only. It does not score generated answers,
+groundedness, architecture recommendations, governance analysis, the Evidence Agent, specialist
+agents, or multi-agent orchestration. It adds no LLM-as-judge, LangSmith integration, external
+observability, human-in-the-loop workflow, retry/timeout platform, cost dashboard, production
+telemetry, migration, API endpoint, or provider dependency.
 
-Known limitations: scanned/image-only PDFs need OCR and return `ocr_required`; file ingestion is
-synchronous and memory-bounded rather than a background job; legacy Word, spreadsheets,
-presentations, image understanding, archive ingestion, web crawling, and external enterprise
-connectors such as Google Drive or SharePoint are not implemented. Formal RAG, GraphRAG, agent,
-LLM-as-judge, cost, and latency evaluation plus an observability platform remain deferred to V7.
-Production deployment infrastructure—including Docker, CI/CD, authentication, authorization,
-malware scanning, object storage, queues, and frontend UI—remains deferred to V8 or later. MCP and
-LangSmith are not included. Existing read-only tool allowlists and per-agent permissions are
-unchanged; uploaded text cannot grant tools or alter agent roles.
+The V6.5 ingestion limitations remain: scanned/image-only PDFs need OCR; file ingestion is
+synchronous and memory-bounded; and legacy Word, spreadsheets, presentations, image understanding,
+archive ingestion, web crawling, and external enterprise connectors are not implemented.
+Production infrastructure—including Docker, CI/CD, authentication, authorization, malware
+scanning, object storage, queues, deployment, and frontend UI—remains deferred to V8.

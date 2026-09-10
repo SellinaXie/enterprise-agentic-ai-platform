@@ -1,0 +1,389 @@
+{
+  "dataset_id": "v7a-enterprise-retrieval-benchmark",
+  "version": "1.0.0",
+  "description": "Fictional enterprise documents and known evidence for deterministic retrieval evaluation. No item represents a real company policy or regulation.",
+  "synthetic": true,
+  "documents": [
+    {
+      "document_id": "00000000-0000-7000-8000-000000000001",
+      "chunk_id": "00000000-0000-7000-8000-000000001001",
+      "title": "Synthetic AI Governance Policy",
+      "content": "Synthetic policy only. High-risk AI decisions are governed by the AI Governance Policy and require the Human Oversight Standard before release. This is not a real company policy."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000002",
+      "chunk_id": "00000000-0000-7000-8000-000000001002",
+      "title": "Synthetic Financial Compliance Review Process",
+      "content": "Synthetic process only. The Financial Compliance Review Process consumes Customer PII in the Case Management System, creates Privacy Risk, and is governed by the Financial Compliance Review Policy."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000003",
+      "chunk_id": "00000000-0000-7000-8000-000000001003",
+      "title": "Synthetic Customer Data Handling Policy",
+      "content": "Synthetic policy only. Customer PII is governed by the Customer Data Handling Policy, which requires approved retention periods and access records."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000004",
+      "chunk_id": "00000000-0000-7000-8000-000000001004",
+      "title": "Synthetic AI Architecture Guide",
+      "content": "Synthetic guidance only. The Retrieval Pipeline is part of the AI Architecture Guide and separates source ingestion, vector retrieval, graph retrieval, and grounded context construction."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000005",
+      "chunk_id": "00000000-0000-7000-8000-000000001005",
+      "title": "Synthetic Incident Response Procedure",
+      "content": "Synthetic procedure only. A Security Incident is mitigated by the Incident Response Procedure, which requires triage, containment, notification, and an audit record."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000006",
+      "chunk_id": "00000000-0000-7000-8000-000000001006",
+      "title": "Synthetic Human Oversight Standard",
+      "content": "Synthetic standard only. The Human Oversight Standard requires an authorized reviewer to approve high-risk AI decisions and governs model-monitoring escalations."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000007",
+      "chunk_id": "00000000-0000-7000-8000-000000001007",
+      "title": "Synthetic Vendor Risk Management Policy",
+      "content": "Synthetic policy only. Vendor Due Diligence is governed by the Vendor Risk Management Policy and documents security, privacy, resilience, and exit-risk review."
+    },
+    {
+      "document_id": "00000000-0000-7000-8000-000000000008",
+      "chunk_id": "00000000-0000-7000-8000-000000001008",
+      "title": "Synthetic Model Monitoring Procedure",
+      "content": "Synthetic procedure only. The Model Monitoring Procedure produces an Escalation Control when drift exceeds a threshold and is governed by the Human Oversight Standard."
+    }
+  ],
+  "entities": [
+    {"entity_id": "00000000-0000-7000-8000-000000002001", "canonical_name": "High-Risk AI Decision", "entity_type": "ai_capability"},
+    {"entity_id": "00000000-0000-7000-8000-000000002002", "canonical_name": "AI Governance Policy", "entity_type": "policy"},
+    {"entity_id": "00000000-0000-7000-8000-000000002003", "canonical_name": "Human Oversight Standard", "entity_type": "policy"},
+    {"entity_id": "00000000-0000-7000-8000-000000002004", "canonical_name": "Financial Compliance Review Process", "entity_type": "process"},
+    {"entity_id": "00000000-0000-7000-8000-000000002005", "canonical_name": "Customer PII", "entity_type": "data_asset"},
+    {"entity_id": "00000000-0000-7000-8000-000000002006", "canonical_name": "Privacy Risk", "entity_type": "risk"},
+    {"entity_id": "00000000-0000-7000-8000-000000002007", "canonical_name": "Case Management System", "entity_type": "system"},
+    {"entity_id": "00000000-0000-7000-8000-000000002008", "canonical_name": "Financial Compliance Review Policy", "entity_type": "policy"},
+    {"entity_id": "00000000-0000-7000-8000-000000002009", "canonical_name": "Security Incident", "entity_type": "risk"},
+    {"entity_id": "00000000-0000-7000-8000-000000002010", "canonical_name": "Incident Response Procedure", "entity_type": "process"},
+    {"entity_id": "00000000-0000-7000-8000-000000002011", "canonical_name": "Vendor Due Diligence", "entity_type": "process"},
+    {"entity_id": "00000000-0000-7000-8000-000000002012", "canonical_name": "Vendor Risk Management Policy", "entity_type": "policy"},
+    {"entity_id": "00000000-0000-7000-8000-000000002013", "canonical_name": "Model Monitoring Procedure", "entity_type": "process"},
+    {"entity_id": "00000000-0000-7000-8000-000000002014", "canonical_name": "Escalation Control", "entity_type": "control"},
+    {"entity_id": "00000000-0000-7000-8000-000000002015", "canonical_name": "Customer Data Handling Policy", "entity_type": "policy"},
+    {"entity_id": "00000000-0000-7000-8000-000000002016", "canonical_name": "Retrieval Pipeline", "entity_type": "system"},
+    {"entity_id": "00000000-0000-7000-8000-000000002017", "canonical_name": "AI Architecture Guide", "entity_type": "other"}
+  ],
+  "relationships": [
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003001",
+      "source_entity": "High-Risk AI Decision",
+      "relationship_type": "governed_by",
+      "target_entity": "AI Governance Policy",
+      "source_document_id": "00000000-0000-7000-8000-000000000001",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001001"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003002",
+      "source_entity": "High-Risk AI Decision",
+      "relationship_type": "requires",
+      "target_entity": "Human Oversight Standard",
+      "source_document_id": "00000000-0000-7000-8000-000000000006",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001006"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003003",
+      "source_entity": "Financial Compliance Review Process",
+      "relationship_type": "consumes",
+      "target_entity": "Customer PII",
+      "source_document_id": "00000000-0000-7000-8000-000000000002",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001002"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003004",
+      "source_entity": "Financial Compliance Review Process",
+      "relationship_type": "creates_risk",
+      "target_entity": "Privacy Risk",
+      "source_document_id": "00000000-0000-7000-8000-000000000002",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001002"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003005",
+      "source_entity": "Financial Compliance Review Process",
+      "relationship_type": "uses",
+      "target_entity": "Case Management System",
+      "source_document_id": "00000000-0000-7000-8000-000000000002",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001002"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003006",
+      "source_entity": "Financial Compliance Review Process",
+      "relationship_type": "governed_by",
+      "target_entity": "Financial Compliance Review Policy",
+      "source_document_id": "00000000-0000-7000-8000-000000000002",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001002"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003007",
+      "source_entity": "Security Incident",
+      "relationship_type": "mitigated_by",
+      "target_entity": "Incident Response Procedure",
+      "source_document_id": "00000000-0000-7000-8000-000000000005",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001005"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003008",
+      "source_entity": "Vendor Due Diligence",
+      "relationship_type": "governed_by",
+      "target_entity": "Vendor Risk Management Policy",
+      "source_document_id": "00000000-0000-7000-8000-000000000007",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001007"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003009",
+      "source_entity": "Model Monitoring Procedure",
+      "relationship_type": "produces",
+      "target_entity": "Escalation Control",
+      "source_document_id": "00000000-0000-7000-8000-000000000008",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001008"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003010",
+      "source_entity": "Model Monitoring Procedure",
+      "relationship_type": "governed_by",
+      "target_entity": "Human Oversight Standard",
+      "source_document_id": "00000000-0000-7000-8000-000000000006",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001006"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003011",
+      "source_entity": "Customer PII",
+      "relationship_type": "governed_by",
+      "target_entity": "Customer Data Handling Policy",
+      "source_document_id": "00000000-0000-7000-8000-000000000003",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001003"
+    },
+    {
+      "relationship_id": "00000000-0000-7000-8000-000000003012",
+      "source_entity": "Retrieval Pipeline",
+      "relationship_type": "part_of",
+      "target_entity": "AI Architecture Guide",
+      "source_document_id": "00000000-0000-7000-8000-000000000004",
+      "source_chunk_id": "00000000-0000-7000-8000-000000001004"
+    }
+  ],
+  "cases": [
+    {
+      "query_id": "q01_human_approval",
+      "query": "What policy requires human approval for high-risk AI decisions?",
+      "query_type": "policy_lookup",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000001", "00000000-0000-7000-8000-000000000006"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001001", "00000000-0000-7000-8000-000000001006"],
+        "entities": ["High-Risk AI Decision", "AI Governance Policy", "Human Oversight Standard"],
+        "relationships": [
+          {"source_entity": "High-Risk AI Decision", "relationship_type": "governed_by", "target_entity": "AI Governance Policy"},
+          {"source_entity": "High-Risk AI Decision", "relationship_type": "requires", "target_entity": "Human Oversight Standard"}
+        ],
+        "paths": [{"relationships": [{"source_entity": "High-Risk AI Decision", "relationship_type": "requires", "target_entity": "Human Oversight Standard"}]}]
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001006", "00000000-0000-7000-8000-000000001001", "00000000-0000-7000-8000-000000001002"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002001"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002002", "00000000-0000-7000-8000-000000002003"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003001", "00000000-0000-7000-8000-000000003002"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001001", "00000000-0000-7000-8000-000000001006"],
+          "depth_used": 1
+        }
+      },
+      "notes": "Vector-friendly policy lookup with two known relevant sources."
+    },
+    {
+      "query_id": "q02_pii_impact_chain",
+      "query": "Which business process handles customer PII and what risk does that create?",
+      "query_type": "relationship_impact_chain",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000002", "00000000-0000-7000-8000-000000000003"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001002", "00000000-0000-7000-8000-000000001003"],
+        "entities": ["Financial Compliance Review Process", "Customer PII", "Privacy Risk"],
+        "relationships": [
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "consumes", "target_entity": "Customer PII"},
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "creates_risk", "target_entity": "Privacy Risk"}
+        ],
+        "paths": [{"relationships": [
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "consumes", "target_entity": "Customer PII"},
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "creates_risk", "target_entity": "Privacy Risk"}
+        ]}]
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001003", "00000000-0000-7000-8000-000000001007"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002005"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002004", "00000000-0000-7000-8000-000000002006"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003003", "00000000-0000-7000-8000-000000003004"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001002"],
+          "depth_used": 2
+        }
+      },
+      "notes": "Hybrid should recover process evidence that the fixture vector ranking misses."
+    },
+    {
+      "query_id": "q03_system_process_policy_path",
+      "query": "What policy governs the process that uses the case management system?",
+      "query_type": "multi_hop_relationship",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000002"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001002"],
+        "entities": ["Case Management System", "Financial Compliance Review Process", "Financial Compliance Review Policy"],
+        "relationships": [
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "uses", "target_entity": "Case Management System"},
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "governed_by", "target_entity": "Financial Compliance Review Policy"}
+        ],
+        "paths": [{"relationships": [
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "uses", "target_entity": "Case Management System"},
+          {"source_entity": "Financial Compliance Review Process", "relationship_type": "governed_by", "target_entity": "Financial Compliance Review Policy"}
+        ]}]
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001004", "00000000-0000-7000-8000-000000001007"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002007"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002004", "00000000-0000-7000-8000-000000002008"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003005", "00000000-0000-7000-8000-000000003006"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001002"],
+          "depth_used": 2
+        }
+      }
+    },
+    {
+      "query_id": "q04_incident_response",
+      "query": "Which procedure mitigates a security incident and requires notification?",
+      "query_type": "semantic_factual",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000005"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001005"],
+        "entities": ["Security Incident", "Incident Response Procedure"],
+        "relationships": [{"source_entity": "Security Incident", "relationship_type": "mitigated_by", "target_entity": "Incident Response Procedure"}],
+        "paths": []
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001005", "00000000-0000-7000-8000-000000001003"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002009"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002010"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003007"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001005"],
+          "depth_used": 1
+        }
+      }
+    },
+    {
+      "query_id": "q05_vendor_policy",
+      "query": "What policy governs vendor due diligence?",
+      "query_type": "policy_lookup",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000007"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001007"],
+        "entities": ["Vendor Due Diligence", "Vendor Risk Management Policy"],
+        "relationships": [{"source_entity": "Vendor Due Diligence", "relationship_type": "governed_by", "target_entity": "Vendor Risk Management Policy"}],
+        "paths": []
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001007"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002011"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002012"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003008"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001007"],
+          "depth_used": 1
+        }
+      }
+    },
+    {
+      "query_id": "q06_monitoring_oversight",
+      "query": "How does model monitoring connect to human oversight and escalation?",
+      "query_type": "multi_document",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000008", "00000000-0000-7000-8000-000000000006"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001008", "00000000-0000-7000-8000-000000001006"],
+        "entities": ["Model Monitoring Procedure", "Escalation Control", "Human Oversight Standard"],
+        "relationships": [
+          {"source_entity": "Model Monitoring Procedure", "relationship_type": "produces", "target_entity": "Escalation Control"},
+          {"source_entity": "Model Monitoring Procedure", "relationship_type": "governed_by", "target_entity": "Human Oversight Standard"}
+        ],
+        "paths": [{"relationships": [
+          {"source_entity": "Model Monitoring Procedure", "relationship_type": "produces", "target_entity": "Escalation Control"},
+          {"source_entity": "Model Monitoring Procedure", "relationship_type": "governed_by", "target_entity": "Human Oversight Standard"}
+        ]}]
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001008", "00000000-0000-7000-8000-000000001004"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002013"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002014", "00000000-0000-7000-8000-000000002003"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003009", "00000000-0000-7000-8000-000000003010"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001008", "00000000-0000-7000-8000-000000001006"],
+          "depth_used": 2
+        }
+      }
+    },
+    {
+      "query_id": "q07_customer_retention",
+      "query": "Which policy defines retention controls for customer PII?",
+      "query_type": "policy_lookup",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000003"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001003"],
+        "entities": ["Customer PII", "Customer Data Handling Policy"],
+        "relationships": [{"source_entity": "Customer PII", "relationship_type": "governed_by", "target_entity": "Customer Data Handling Policy"}],
+        "paths": []
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001003", "00000000-0000-7000-8000-000000001002"],
+        "graph": {
+          "matched_entity_ids": ["00000000-0000-7000-8000-000000002005"],
+          "related_entity_ids": ["00000000-0000-7000-8000-000000002015"],
+          "relationship_ids": ["00000000-0000-7000-8000-000000003011"],
+          "evidence_chunk_ids": ["00000000-0000-7000-8000-000000001003"],
+          "depth_used": 1
+        }
+      }
+    },
+    {
+      "query_id": "q08_aircraft_negative",
+      "query": "What policy covers aircraft maintenance inspections?",
+      "query_type": "negative_no_answer",
+      "modes": ["vector", "graph", "hybrid"],
+      "expected": {"document_ids": [], "chunk_ids": [], "entities": [], "relationships": [], "paths": []},
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001004"],
+        "graph": {"matched_entity_ids": [], "related_entity_ids": [], "relationship_ids": [], "evidence_chunk_ids": [], "depth_used": 0}
+      },
+      "notes": "Intentional vector false positive validates the no-answer penalty."
+    },
+    {
+      "query_id": "q09_architecture_components",
+      "query": "Which guide separates ingestion, vector retrieval, and graph retrieval?",
+      "query_type": "semantic_factual",
+      "modes": ["vector", "hybrid"],
+      "expected": {
+        "document_ids": ["00000000-0000-7000-8000-000000000004"],
+        "chunk_ids": ["00000000-0000-7000-8000-000000001004"],
+        "entities": [],
+        "relationships": [],
+        "paths": []
+      },
+      "fixture": {
+        "vector_chunk_ids": ["00000000-0000-7000-8000-000000001004", "00000000-0000-7000-8000-000000001008"],
+        "graph": {"matched_entity_ids": [], "related_entity_ids": [], "relationship_ids": [], "evidence_chunk_ids": [], "depth_used": 0}
+      },
+      "notes": "Graph mode is deliberately inapplicable to exercise typed skip behavior."
+    }
+  ]
+}
