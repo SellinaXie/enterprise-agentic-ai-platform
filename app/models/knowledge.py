@@ -19,6 +19,14 @@ class KnowledgeSourceType(StrEnum):
     SYNTHETIC = "synthetic"
 
 
+class RetrievalSource(StrEnum):
+    """Explainable origin for one retrieved chunk in V3/V6 retrieval."""
+
+    VECTOR = "vector"
+    GRAPH = "graph"
+    BOTH = "both"
+
+
 @dataclass(frozen=True, slots=True)
 class KnowledgeDocumentRecord:
     """Persistence-neutral normalized knowledge document."""
@@ -66,9 +74,10 @@ class RetrievedEvidence:
     document_id: UUID
     document_title: str
     content: str
-    similarity_score: float
+    similarity_score: float | None
     source_type: KnowledgeSourceType
     metadata: dict[str, Any]
+    retrieval_source: RetrievalSource = RetrievalSource.VECTOR
 
 
 @dataclass(frozen=True, slots=True)

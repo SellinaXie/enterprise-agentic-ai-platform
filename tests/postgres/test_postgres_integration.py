@@ -68,7 +68,7 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
         ).scalar_one()
 
     assert version.startswith("PostgreSQL ")
-    assert revision == "20260909_0003"
+    assert revision == "20260910_0004"
     assert "assessments" in schema.get_table_names()
     assert "knowledge_documents" in schema.get_table_names()
     assert "knowledge_chunks" in schema.get_table_names()

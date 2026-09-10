@@ -116,3 +116,31 @@ class KnowledgePersistenceError(ApplicationError):
 
     error_code = "knowledge_persistence_error"
     public_message = "The knowledge document could not be persisted. Please try again."
+
+
+class KnowledgeGraphDisabledError(ApplicationError):
+    """Raised when an opt-in graph operation is requested while V6 is disabled."""
+
+    error_code = "knowledge_graph_disabled"
+    public_message = "Knowledge graph operations are not enabled."
+
+
+class KnowledgeGraphExtractionError(ApplicationError):
+    """Raised when graph candidates cannot be validated safely."""
+
+    error_code = "knowledge_graph_extraction_error"
+    public_message = "Knowledge graph extraction could not produce valid grounded data."
+
+
+class KnowledgeGraphPersistenceError(ApplicationError):
+    """Raised when graph records cannot be persisted atomically."""
+
+    error_code = "knowledge_graph_persistence_error"
+    public_message = "The knowledge graph could not be persisted. Please try again."
+
+
+class KnowledgeGraphUnavailableError(ApplicationError):
+    """Raised when bounded graph retrieval cannot access its persistence layer."""
+
+    error_code = "knowledge_graph_unavailable"
+    public_message = "Knowledge graph retrieval is temporarily unavailable. Please try again."

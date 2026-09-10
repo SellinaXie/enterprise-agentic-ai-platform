@@ -34,6 +34,10 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.evidence_agent_max_tool_calls == 4
     assert settings.multi_agent_max_failures == 2
     assert settings.specialist_retry_limit == 1
+    assert settings.knowledge_graph_enabled is False
+    assert settings.graph_max_depth == 2
+    assert settings.graph_max_entities == 20
+    assert settings.graph_min_confidence == 0.5
 
 
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:
@@ -49,3 +53,12 @@ def test_agentic_recursion_limit_must_cover_bounded_graph_path() -> None:
             AGENT_MAX_STEPS=5,
             LANGGRAPH_RECURSION_LIMIT=12,
         )
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("GRAPH_MAX_DEPTH", 0), ("GRAPH_MAX_ENTITIES", 0), ("GRAPH_MIN_CONFIDENCE", 1.1)],
+)
+def test_graph_bounds_are_validated(name: str, value: float) -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{name: value})

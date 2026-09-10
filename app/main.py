@@ -25,6 +25,10 @@ from app.core.exceptions import (
     InvalidEmbeddingError,
     InvalidLLMResponseError,
     KnowledgeDocumentNotFoundError,
+    KnowledgeGraphDisabledError,
+    KnowledgeGraphExtractionError,
+    KnowledgeGraphPersistenceError,
+    KnowledgeGraphUnavailableError,
     KnowledgePersistenceError,
     KnowledgeStoreUnavailableError,
     LLMProviderError,
@@ -78,6 +82,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             KnowledgeDocumentNotFoundError: status.HTTP_404_NOT_FOUND,
             KnowledgeStoreUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
             KnowledgePersistenceError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            KnowledgeGraphDisabledError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            KnowledgeGraphExtractionError: status.HTTP_502_BAD_GATEWAY,
+            KnowledgeGraphPersistenceError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            KnowledgeGraphUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
         }
         payload = ErrorResponse(error=ErrorDetail(code=exc.error_code, message=exc.public_message))
         return JSONResponse(

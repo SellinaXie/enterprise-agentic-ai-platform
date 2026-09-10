@@ -22,6 +22,7 @@ from app.core.exceptions import (
     OpenAIClientNotConfiguredError,
 )
 from app.models.knowledge import RetrievedEvidence
+from app.models.knowledge_graph import GraphNeighborhood, GraphRetrievalExecutionMetadata
 from app.schemas.assessment import AssessmentRequest
 from app.tools.models import ObservedKnowledgeDocument, ToolExecutionResult, ToolHistoryEntry
 from app.tools.permissions import AgentToolPermissions
@@ -38,6 +39,8 @@ class EvidenceAgentOutcome:
     tool_history: tuple[ToolHistoryEntry, ...]
     steps_used: int
     termination_reason: AgentTerminationReason
+    graph_neighborhoods: tuple[GraphNeighborhood, ...] = ()
+    graph_retrieval: GraphRetrievalExecutionMetadata | None = None
 
 
 class EvidenceAgent(Protocol):
@@ -79,6 +82,7 @@ class OpenAIEvidenceAgent:
         """Run a finite one-tool-per-step loop, then emit a provenance-sanitized brief."""
         evidence: list[RetrievedEvidence] = []
         documents: list[ObservedKnowledgeDocument] = []
+        graph_neighborhoods: list[GraphNeighborhood] = []
         history: list[ToolHistoryEntry] = []
         cache: dict[str, ToolExecutionResult] = {}
         steps_used = 0
@@ -94,6 +98,7 @@ class OpenAIEvidenceAgent:
                 evidence=evidence,
                 documents=documents,
                 history=history,
+                graph_neighborhoods=graph_neighborhoods,
                 step=step,
             )
             if request_call is None:
@@ -118,9 +123,10 @@ class OpenAIEvidenceAgent:
                     call_fingerprint=fingerprint,
                     cached=result.cached,
                     error_code=result.error_code,
+                    graph_retrieval=result.graph_retrieval,
                 )
             )
-            self._merge_observations(evidence, documents, result)
+            self._merge_observations(evidence, documents, graph_neighborhoods, result)
         else:
             termination_reason = AgentTerminationReason.MAX_STEPS_REACHED
 
@@ -130,6 +136,7 @@ class OpenAIEvidenceAgent:
                 request=request,
                 evidence=evidence,
                 documents=documents,
+                graph_neighborhoods=graph_neighborhoods,
             ),
             output_model=EvidenceBrief,
         )
@@ -138,9 +145,11 @@ class OpenAIEvidenceAgent:
             brief=brief,
             evidence=tuple(evidence),
             documents=tuple(documents),
+            graph_neighborhoods=tuple(graph_neighborhoods),
             tool_history=tuple(history),
             steps_used=steps_used,
             termination_reason=termination_reason,
+            graph_retrieval=_aggregate_graph_metadata(history),
         )
 
     def _request_tool(
@@ -150,6 +159,7 @@ class OpenAIEvidenceAgent:
         evidence: list[RetrievedEvidence],
         documents: list[ObservedKnowledgeDocument],
         history: list[ToolHistoryEntry],
+        graph_neighborhoods: list[GraphNeighborhood],
         step: int,
     ) -> tuple[str, dict[str, object]] | None:
         try:
@@ -164,6 +174,7 @@ class OpenAIEvidenceAgent:
                             evidence=evidence,
                             documents=documents,
                             history=history,
+                            graph_neighborhoods=graph_neighborhoods,
                             step=step,
                             max_steps=self._max_steps,
                         ),
@@ -198,6 +209,7 @@ class OpenAIEvidenceAgent:
     def _merge_observations(
         evidence: list[RetrievedEvidence],
         documents: list[ObservedKnowledgeDocument],
+        graph_neighborhoods: list[GraphNeighborhood],
         result: ToolExecutionResult,
     ) -> None:
         existing_chunks = {item.chunk_id for item in evidence}
@@ -206,6 +218,8 @@ class OpenAIEvidenceAgent:
             item.document_id != result.document.document_id for item in documents
         ):
             documents.append(result.document)
+        if result.graph_neighborhood is not None:
+            graph_neighborhoods.append(result.graph_neighborhood)
 
     @staticmethod
     def _sanitize_brief(
@@ -241,3 +255,29 @@ class OpenAIEvidenceAgent:
                 "retrieved_chunk_ids": sorted(allowed_chunks, key=str),
             }
         )
+
+
+def _aggregate_graph_metadata(
+    history: list[ToolHistoryEntry],
+) -> GraphRetrievalExecutionMetadata | None:
+    observations = [item.graph_retrieval for item in history if item.graph_retrieval is not None]
+    if not observations:
+        return None
+    return GraphRetrievalExecutionMetadata(
+        graph_retrieval_used=any(item.graph_retrieval_used for item in observations),
+        matched_entity_count=sum(item.matched_entity_count for item in observations),
+        relationship_count=sum(item.relationship_count for item in observations),
+        graph_depth_used=max(item.graph_depth_used for item in observations),
+        vector_evidence_count=sum(item.vector_evidence_count for item in observations),
+        graph_evidence_count=sum(item.graph_evidence_count for item in observations),
+        hybrid_evidence_count=sum(item.hybrid_evidence_count for item in observations),
+        degraded_graph_mode=any(item.degraded_graph_mode for item in observations),
+        graph_error_code=next(
+            (item.graph_error_code for item in reversed(observations) if item.graph_error_code),
+            None,
+        ),
+        vector_error_code=next(
+            (item.vector_error_code for item in reversed(observations) if item.vector_error_code),
+            None,
+        ),
+    )

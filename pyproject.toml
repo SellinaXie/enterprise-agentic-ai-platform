@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enterprise-ai-transformation-advisor"
-version = "0.6.0"
-description = "Grounded enterprise AI assessments with controlled single- and multi-agent execution."
+version = "0.7.0"
+description = "Grounded enterprise AI assessments with controlled multi-agent GraphRAG."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

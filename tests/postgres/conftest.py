@@ -141,6 +141,14 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
                 knowledge_tables_removed = not inspect(connection).has_table(
                     "knowledge_documents"
                 ) and not inspect(connection).has_table("knowledge_chunks")
+                graph_tables_removed = all(
+                    not inspect(connection).has_table(table)
+                    for table in (
+                        "knowledge_entities",
+                        "knowledge_entity_mentions",
+                        "knowledge_relationships",
+                    )
+                )
         finally:
             migration_engine.dispose()
 
@@ -154,15 +162,25 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
                 knowledge_tables_created = inspect(connection).has_table(
                     "knowledge_documents"
                 ) and inspect(connection).has_table("knowledge_chunks")
+                graph_tables_created = all(
+                    inspect(connection).has_table(table)
+                    for table in (
+                        "knowledge_entities",
+                        "knowledge_entity_mentions",
+                        "knowledge_relationships",
+                    )
+                )
         finally:
             migration_engine.dispose()
 
     assert downgrade_revision is None
     assert assessment_table_removed
     assert knowledge_tables_removed
-    assert upgrade_revision == "20260909_0003"
+    assert graph_tables_removed
+    assert upgrade_revision == "20260910_0004"
     assert assessment_table_created
     assert knowledge_tables_created
+    assert graph_tables_created
 
     get_session_factory.cache_clear()
     get_engine.cache_clear()
@@ -172,6 +190,9 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
     finally:
         with database_engine.begin() as connection:
             connection.execute(text("DELETE FROM assessments"))
+            connection.execute(text("DELETE FROM knowledge_relationships"))
+            connection.execute(text("DELETE FROM knowledge_entity_mentions"))
+            connection.execute(text("DELETE FROM knowledge_entities"))
             connection.execute(text("DELETE FROM knowledge_chunks"))
             connection.execute(text("DELETE FROM knowledge_documents"))
         database_engine.dispose()
@@ -194,10 +215,16 @@ def clean_postgres_test_data(postgres_engine: Engine) -> Iterator[None]:
     """Keep every PostgreSQL test independent of execution order."""
     with postgres_engine.begin() as connection:
         connection.execute(text("DELETE FROM assessments"))
+        connection.execute(text("DELETE FROM knowledge_relationships"))
+        connection.execute(text("DELETE FROM knowledge_entity_mentions"))
+        connection.execute(text("DELETE FROM knowledge_entities"))
         connection.execute(text("DELETE FROM knowledge_chunks"))
         connection.execute(text("DELETE FROM knowledge_documents"))
     yield
     with postgres_engine.begin() as connection:
         connection.execute(text("DELETE FROM assessments"))
+        connection.execute(text("DELETE FROM knowledge_relationships"))
+        connection.execute(text("DELETE FROM knowledge_entity_mentions"))
+        connection.execute(text("DELETE FROM knowledge_entities"))
         connection.execute(text("DELETE FROM knowledge_chunks"))
         connection.execute(text("DELETE FROM knowledge_documents"))

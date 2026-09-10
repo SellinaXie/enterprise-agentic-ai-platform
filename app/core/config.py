@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     rag_retrieval_top_k: int = Field(default=5, ge=1, le=20)
     rag_similarity_threshold: float = Field(default=0.35, ge=-1.0, le=1.0)
 
+    knowledge_graph_enabled: bool = False
+    graph_max_depth: int = Field(default=2, ge=1, le=5)
+    graph_max_entities: int = Field(default=20, ge=1, le=100)
+    graph_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
     agentic_workflow_enabled: bool = False
     agent_max_steps: int = Field(default=5, ge=1, le=50)
     agent_max_tool_calls: int = Field(default=5, ge=1, le=50)

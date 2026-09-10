@@ -12,6 +12,11 @@ def build_rag_context(evidence: list[RetrievedEvidence]) -> str:
 
     sections = ["EXTERNAL_KNOWLEDGE_STATUS: RELEVANT_EVIDENCE_RETRIEVED"]
     for rank, item in enumerate(evidence, start=1):
+        similarity = (
+            f"{item.similarity_score:.6f}"
+            if item.similarity_score is not None
+            else "not_applicable"
+        )
         sections.append(
             "\n".join(
                 (
@@ -21,7 +26,8 @@ def build_rag_context(evidence: list[RetrievedEvidence]) -> str:
                     f"Document ID: {item.document_id}",
                     f"Chunk ID: {item.chunk_id}",
                     f"Source type: {item.source_type.value}",
-                    f"Similarity: {item.similarity_score:.6f}",
+                    f"Retrieval source: {item.retrieval_source.value}",
+                    f"Similarity: {similarity}",
                     "Content:",
                     item.content,
                     f"END_SOURCE_{rank}",

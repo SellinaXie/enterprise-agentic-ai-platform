@@ -1,10 +1,64 @@
 # Enterprise AI Transformation Advisor
 
-Production-minded V5 backend for grounded enterprise AI assessments. V5 preserves the V1
-schema-constrained OpenAI assessment flow, V2 PostgreSQL application-state persistence, V3
-pgvector RAG, and V4 controlled single-agent workflow, then adds an optional four-agent LangGraph
-workflow with typed handoffs, isolated context, code-enforced tool permissions, and deterministic
-partial-failure behavior.
+Production-minded V6 backend for grounded enterprise AI assessments. V6 preserves the complete
+V1-V5 behavior and adds an opt-in relational knowledge graph, source-grounded extraction, bounded
+graph traversal, and hybrid vector-plus-graph GraphRAG in the existing PostgreSQL database.
+
+## V6 capability
+
+V6 models enterprise relationships without introducing a second database:
+
+```text
+knowledge_documents → knowledge_chunks ──────┐
+        │                    │                │
+        │                    ├── entity mentions
+        │                    └── relationship provenance
+        │                                     │
+        └── pgvector similarity       relational graph traversal
+                          └──────────┬──────────┘
+                                     ▼
+                      provenance-preserving hybrid context
+```
+
+`knowledge_entities` uses a controlled entity taxonomy: organization, process, system, policy,
+regulation, risk, data asset, AI capability, control, role, and other. Identity resolution is
+deliberately conservative: Unicode-normalized whitespace and case variants merge only when their
+entity types also match. It does not perform fuzzy, model-directed, or semantic entity merging.
+
+`knowledge_entity_mentions` links every resolved entity to the exact existing document and chunk
+where it appeared. `knowledge_relationships` stores a directed edge from the controlled `uses`,
+`depends_on`, `part_of`, `governed_by`, `affected_by`, `creates_risk`, `mitigated_by`, `requires`,
+`produces`, `consumes`, or `related_to` vocabulary. Every relationship has a confidence value and
+mandatory source-chunk provenance; unsupported types, unknown entity references, and self-edges
+are rejected.
+
+Entity and relationship extraction uses closed Pydantic structured-output contracts over one
+existing V3 chunk at a time. The model receives only the chunk, its identifier, the controlled
+schema, and for relationships the entity keys already accepted from that chunk. Confidence
+thresholding, normalization, deduplication, provenance validation, and persistence are application
+code responsibilities. Extraction does not request or retain chain-of-thought.
+
+Graph search accepts a plain query, never SQL or a graph query language. It resolves known entity
+names deterministically, traverses incoming and outgoing relationships breadth-first, and enforces
+configured depth, entity-count, and confidence bounds. Hybrid retrieval runs vector and graph paths
+independently, deduplicates by source chunk, and labels internal evidence as `vector`, `graph`, or
+`both`. Graph-only evidence has no fabricated similarity score. Context separates `VECTOR
+EVIDENCE`, `GRAPH RELATIONSHIPS`, and `SOURCE EVIDENCE` so graph claims remain attributable.
+
+The multi-agent Evidence Agent alone can receive `search_knowledge_graph`; V4 retains its exact two
+tools. Safe execution metadata records counts, depth, degraded mode, and public error codes—not
+queries, source text, embeddings, prompts, provider messages, or hidden reasoning. If graph
+retrieval fails, vector evidence remains usable; if vector retrieval fails, graph evidence remains
+usable; if both fail, assessment generation continues from request data only.
+
+### PostgreSQL instead of Neo4j
+
+PostgreSQL is the intentional V6 graph store. The graph is modest, highly provenance-oriented,
+transactional with the existing knowledge layer, easy to migrate with Alembic, and queried through
+bounded application-owned repository operations. A separate Neo4j service would add operations,
+security, consistency, backup, and synchronization costs before the workload demonstrates a need
+for specialized large-scale graph algorithms or graph-query workloads. That tradeoff can be
+revisited from evidence later; no Neo4j integration exists in V6.
 
 ## V5 capability
 
@@ -209,6 +263,8 @@ The two persistence responsibilities remain separate:
   safe failure, timestamps, and compact execution-mode metadata for new completed assessments.
 - `knowledge_documents` and `knowledge_chunks` are V3 retrieval knowledge: normalized source
   text, provenance metadata, deterministic chunks, embeddings, and chunk metadata.
+- `knowledge_entities`, `knowledge_entity_mentions`, and `knowledge_relationships` are V6
+  relational graph knowledge grounded in those same V3 documents and chunks.
 
 No document, chunk, or vector fields were added to `assessments`. Assessment results contain only
 small source references when the model cites retrieved evidence.
@@ -268,6 +324,11 @@ RAG_CHUNK_OVERLAP=200
 RAG_RETRIEVAL_TOP_K=5
 RAG_SIMILARITY_THRESHOLD=0.35
 
+KNOWLEDGE_GRAPH_ENABLED=false
+GRAPH_MAX_DEPTH=2
+GRAPH_MAX_ENTITIES=20
+GRAPH_MIN_CONFIDENCE=0.5
+
 AGENTIC_WORKFLOW_ENABLED=false
 AGENT_MAX_STEPS=5
 AGENT_MAX_TOOL_CALLS=5
@@ -301,6 +362,10 @@ SPECIALIST_RETRY_LIMIT=1
   requires at least one successfully available specialist analysis.
 - `SPECIALIST_RETRY_LIMIT=1` permits one retry after the initial schema-constrained specialist
   request. It does not create an agent-directed repair loop.
+- `KNOWLEDGE_GRAPH_ENABLED=false` preserves V1-V5 behavior and disables graph extraction,
+  traversal, hybrid assessment retrieval, and the Evidence Agent graph tool by default.
+- `GRAPH_MAX_DEPTH`, `GRAPH_MAX_ENTITIES`, and `GRAPH_MIN_CONFIDENCE` are hard application-owned
+  traversal and acceptance bounds; defaults are two hops, 20 entities, and 0.5 confidence.
 
 ## Ingestion
 
@@ -323,6 +388,17 @@ vector dimensions, stores the chunks, and commits the operation atomically.
 `GET /api/v1/knowledge/documents/{document_id}` returns the normalized stored document.
 
 V3 intentionally accepts plain text only. It does not add file upload, PDF parsing, or OCR.
+
+After ingesting a document, opt in to V6 and extract its graph from the already stored chunks:
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/api/v1/knowledge/documents/DOCUMENT_UUID/graph
+```
+
+This synchronous endpoint is idempotent for deterministically identical entities, mentions, and
+source-grounded relationships. The document must already exist; it does not upload, parse, or
+replace source content.
 
 ## Retrieval
 
@@ -386,6 +462,12 @@ assessment records retain their existing behavior. Its downgrade removes only th
 
 V5 reuses that JSONB column and does not add a migration or agent-run table.
 
+V6 revision `20260910_0004` follows the unmodified V5 head and adds `knowledge_entities`,
+`knowledge_entity_mentions`, and `knowledge_relationships` with UUID keys, JSONB metadata,
+TIMESTAMPTZ values, controlled-vocabulary checks, confidence checks, uniqueness constraints,
+cascading provenance foreign keys, a no-self-edge constraint, and traversal indexes. Downgrade
+removes only these three V6 tables in dependency-safe order.
+
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
 pgvector operators.
@@ -411,6 +493,10 @@ isolation, tool permissions, bounded Evidence Agent behavior, all success/degrad
 paths, native parallel fan-out with deterministic fan-in, result/citation safeguards, execution
 mode precedence, JSONB metadata persistence, and POST/GET round trips. OpenAI is mocked at the
 Responses API boundary.
+V6 tests add extraction-contract rejection, conservative entity resolution, source-grounded
+relationship persistence, bounded traversal, vector/graph merge labels, independent fallback
+paths, GraphRAG context boundaries, Evidence Agent-only permissions, feature-flag compatibility,
+safe execution metadata, endpoint behavior, and an optional live PostgreSQL graph round trip.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -432,16 +518,25 @@ version, pgvector extension availability, UUID/JSONB/TIMESTAMPTZ/vector storage,
 neighbors, lifecycle persistence, and a grounded POST/GET assessment round trip with deterministic
 embeddings and mocked OpenAI.
 
+V6 also checks migration and graph-table creation plus UUID, JSONB, timezone-aware timestamp,
+entity, mention, relationship, provenance, and bounded traversal behavior against the same guarded
+test database. All fixtures are synthetic; no external knowledge dataset is required.
+
 Do not run multiple test processes against the same test database. Run only fast tests with:
 
 ```bash
 pytest -m "not postgres"
 ```
 
-## V5 scope boundary
+## V6 scope boundary
 
-V5 is a controlled assessment workflow, not a general autonomous-agent platform. It adds no LLM
-supervisor, arbitrary tool, external side effect, human-in-the-loop pause/resume infrastructure,
-MCP, LangSmith integration, knowledge graph, GraphRAG, graph database, entity/relationship
-extraction, eval framework, UI, authentication, deployment, Docker, file parsing, or OCR. Those
-concerns remain intentionally deferred; V6 has not been started.
+V6 is a controlled, source-grounded relational graph and GraphRAG increment—not a general graph or
+autonomous-agent platform. Implemented now: PostgreSQL graph tables, constrained per-chunk
+extraction, conservative entity resolution, provenance, bounded traversal, hybrid retrieval,
+GraphRAG context, the Evidence Agent graph tool, safe fallbacks, settings, API enrichment, tests,
+and documentation.
+
+Still planned or explicitly out of scope: PDF/DOCX parsing, OCR, browser or file upload, external
+datasets, Neo4j, Cypher, arbitrary graph queries, graph visualization UI, evaluation frameworks,
+LangSmith, MCP, Docker, CI/CD, authentication, deployment, asynchronous extraction jobs, generalized
+agent memory, and human-in-the-loop pause/resume infrastructure. V6.5 has not been started.

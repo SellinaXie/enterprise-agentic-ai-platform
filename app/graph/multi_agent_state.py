@@ -13,6 +13,7 @@ from app.agents.multi_agent_models import (
     RiskGovernanceReview,
 )
 from app.models.knowledge import RetrievedEvidence
+from app.models.knowledge_graph import GraphRetrievalExecutionMetadata
 from app.schemas.assessment import AssessmentRequest, AssessmentResult
 from app.tools.models import ObservedKnowledgeDocument, ToolHistoryEntry
 
@@ -31,6 +32,7 @@ class MultiAgentGraphState(TypedDict):
     tool_history: list[ToolHistoryEntry]
     evidence_steps_used: int
     evidence_termination_reason: AgentTerminationReason | None
+    graph_retrieval: GraphRetrievalExecutionMetadata | None
     architecture_recommendation: ArchitectureRecommendation | None
     risk_governance_review: RiskGovernanceReview | None
     final_result: AssessmentResult | None
@@ -74,6 +76,7 @@ def initialize_multi_agent_state(
         tool_history=[],
         evidence_steps_used=0,
         evidence_termination_reason=None,
+        graph_retrieval=None,
         architecture_recommendation=None,
         risk_governance_review=None,
         final_result=None,

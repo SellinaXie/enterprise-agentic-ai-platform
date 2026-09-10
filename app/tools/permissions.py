@@ -9,7 +9,9 @@ from app.agents.multi_agent_models import MultiAgentName
 from app.tools.models import ToolExecutionResult
 from app.tools.registry import ToolRegistry
 
-EVIDENCE_TOOL_NAMES = frozenset({"search_knowledge", "get_knowledge_document"})
+EVIDENCE_TOOL_NAMES = frozenset(
+    {"search_knowledge", "get_knowledge_document", "search_knowledge_graph"}
+)
 
 
 class AgentToolPermissions:

@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.models.knowledge_graph import GraphRetrievalExecutionMetadata
+
 
 class AgentDecisionType(StrEnum):
     """Allowlisted transitions that the single reasoning agent may request."""
@@ -89,6 +91,7 @@ class AssessmentExecutionMetadata(BaseModel):
     tools_used: list[str]
     termination_reason: AgentTerminationReason
     trace: list[AgentTraceEvent]
+    graph_retrieval: GraphRetrievalExecutionMetadata | None = None
 
 
 class DeterministicExecutionMetadata(BaseModel):
@@ -97,3 +100,4 @@ class DeterministicExecutionMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     execution_mode: Literal["deterministic"] = "deterministic"
+    graph_retrieval: GraphRetrievalExecutionMetadata | None = None

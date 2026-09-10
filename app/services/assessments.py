@@ -18,6 +18,7 @@ from app.core.exceptions import (
 )
 from app.models.assessment import ExternalEvidenceStatus
 from app.models.knowledge import RAGPreparation, RetrievedEvidence
+from app.models.knowledge_graph import HybridRAGPreparation
 from app.models.persisted_assessment import PersistedAssessment
 from app.schemas.assessment import (
     AssessmentFailure,
@@ -78,7 +79,7 @@ class AssessmentRepositoryProtocol(Protocol):
 class AssessmentRAGProtocol(Protocol):
     """RAG preparation required by the assessment workflow when enabled."""
 
-    def prepare(self, request: AssessmentRequest) -> RAGPreparation: ...
+    def prepare(self, request: AssessmentRequest) -> RAGPreparation | HybridRAGPreparation: ...
 
 
 ExecutionMetadata = (
@@ -189,6 +190,11 @@ class AssessmentService:
                     preparation = self._rag_service.prepare(request)
                     evidence = preparation.evidence
                     rag_context = preparation.context
+                    graph_retrieval = getattr(preparation, "graph_retrieval", None)
+                    if graph_retrieval is not None:
+                        execution = execution.model_copy(
+                            update={"graph_retrieval": graph_retrieval}
+                        )
                 prompt = (
                     build_assessment_prompt(request, rag_context)
                     if rag_context is not None

@@ -16,6 +16,10 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.graph.multi_agent_workflow import MultiAgentAssessmentWorkflow
 from app.graph.workflow import AgenticAssessmentWorkflow
+from app.knowledge_graph.enrichment import KnowledgeGraphEnrichmentService
+from app.knowledge_graph.extraction import OpenAIEntityExtractor, OpenAIRelationshipExtractor
+from app.knowledge_graph.hybrid import HybridRAGService, HybridRetrievalService
+from app.knowledge_graph.retrieval import GraphRetrievalService
 from app.rag.embeddings import OpenAIEmbeddingsService
 from app.rag.ingestion import KnowledgeIngestionService
 from app.rag.retrieval import RetrievalService
@@ -23,6 +27,7 @@ from app.rag.service import RAGService
 from app.repositories.assessments import AssessmentRepository
 from app.repositories.knowledge_chunks import KnowledgeChunkRepository
 from app.repositories.knowledge_documents import KnowledgeDocumentRepository
+from app.repositories.knowledge_graph import KnowledgeGraphRepository
 from app.services.assessments import AssessmentGenerator, AssessmentService
 from app.services.llm import OpenAIAssessmentGenerator, get_openai_client
 from app.tools.knowledge import build_knowledge_tool_registry
@@ -60,6 +65,13 @@ def get_knowledge_chunk_repository(
 ) -> KnowledgeChunkRepository:
     """Build a chunk repository around the request-scoped session."""
     return KnowledgeChunkRepository(session)
+
+
+def get_knowledge_graph_repository(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> KnowledgeGraphRepository:
+    """Build the V6 relational graph repository on the request-scoped session."""
+    return KnowledgeGraphRepository(session)
 
 
 def get_embeddings_service(
@@ -106,12 +118,73 @@ def get_retrieval_service(
     )
 
 
+def get_graph_retrieval_service(
+    graph: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GraphRetrievalService | None:
+    """Expose bounded graph traversal only behind the explicit V6 feature flag."""
+    if not settings.knowledge_graph_enabled:
+        return None
+    return GraphRetrievalService(
+        graph=graph,
+        max_depth=settings.graph_max_depth,
+        max_entities=settings.graph_max_entities,
+        min_confidence=settings.graph_min_confidence,
+    )
+
+
 def get_assessment_rag_service(
     retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    graph: Annotated[GraphRetrievalService | None, Depends(get_graph_retrieval_service)],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> RAGService | None:
+) -> RAGService | HybridRAGService | None:
     """Enable assessment retrieval only when explicitly configured."""
-    return RAGService(retrieval) if settings.rag_enabled else None
+    if not settings.rag_enabled:
+        return None
+    if graph is not None:
+        return HybridRAGService(HybridRetrievalService(vector=retrieval, graph=graph))
+    return RAGService(retrieval)
+
+
+def get_graph_structured_output(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OpenAIStructuredOutput:
+    """Build the schema-constrained adapter used by per-chunk graph extraction."""
+    return OpenAIStructuredOutput(
+        model=settings.openai_model,
+        store_responses=settings.openai_store_responses,
+        retry_limit=settings.specialist_retry_limit,
+        client_provider=partial(get_openai_client, settings),
+    )
+
+
+def get_graph_enrichment_service(
+    documents: Annotated[
+        KnowledgeDocumentRepository,
+        Depends(get_knowledge_document_repository),
+    ],
+    chunks: Annotated[KnowledgeChunkRepository, Depends(get_knowledge_chunk_repository)],
+    graph: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
+    structured: Annotated[OpenAIStructuredOutput, Depends(get_graph_structured_output)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> KnowledgeGraphEnrichmentService | None:
+    """Compose opt-in atomic enrichment over existing V3 document chunks."""
+    if not settings.knowledge_graph_enabled:
+        return None
+    return KnowledgeGraphEnrichmentService(
+        documents=documents,
+        chunks=chunks,
+        graph=graph,
+        entity_extractor=OpenAIEntityExtractor(
+            structured,
+            max_entities=settings.graph_max_entities,
+            min_confidence=settings.graph_min_confidence,
+        ),
+        relationship_extractor=OpenAIRelationshipExtractor(
+            structured,
+            min_confidence=settings.graph_min_confidence,
+        ),
+    )
 
 
 def get_assessment_agent(
@@ -136,6 +209,22 @@ def get_agent_tool_registry(
 ) -> ToolRegistry:
     """Expose only the two approved V4 read-only knowledge tools."""
     return build_knowledge_tool_registry(retrieval=retrieval, documents=documents)
+
+
+def get_evidence_tool_registry(
+    retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    documents: Annotated[
+        KnowledgeDocumentRepository,
+        Depends(get_knowledge_document_repository),
+    ],
+    graph: Annotated[GraphRetrievalService | None, Depends(get_graph_retrieval_service)],
+) -> ToolRegistry:
+    """Preserve V4's registry and add graph search only for the V5 Evidence Agent."""
+    return build_knowledge_tool_registry(
+        retrieval=retrieval,
+        documents=documents,
+        graph=graph,
+    )
 
 
 def get_agentic_assessment_workflow(
@@ -168,7 +257,7 @@ def get_multi_agent_structured_output(
 
 
 def get_evidence_agent(
-    tools: Annotated[ToolRegistry, Depends(get_agent_tool_registry)],
+    tools: Annotated[ToolRegistry, Depends(get_evidence_tool_registry)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> OpenAIEvidenceAgent:
     """Build the only V5 specialist allowed to receive tool schemas."""
@@ -230,7 +319,10 @@ def get_multi_agent_assessment_workflow(
 def get_assessment_service(
     generator: Annotated[AssessmentGenerator, Depends(get_assessment_generator)],
     repository: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
-    rag_service: Annotated[RAGService | None, Depends(get_assessment_rag_service)],
+    rag_service: Annotated[
+        RAGService | HybridRAGService | None,
+        Depends(get_assessment_rag_service),
+    ],
     agentic_workflow: Annotated[
         AgenticAssessmentWorkflow | None,
         Depends(get_agentic_assessment_workflow),

@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.assessment import ComplexityLevel, RiskCategory, RiskSeverity, SolutionPattern
+from app.models.knowledge_graph import GraphRetrievalExecutionMetadata
 
 
 class SpecialistModel(BaseModel):
@@ -210,6 +211,7 @@ class MultiAgentExecutionMetadata(SpecialistModel):
     degradation_reasons: list[str]
     termination_reason: MultiAgentTerminationReason
     trace: list[MultiAgentTraceEvent]
+    graph_retrieval: GraphRetrievalExecutionMetadata | None = None
 
     @model_validator(mode="after")
     def validate_agent_roster(self) -> "MultiAgentExecutionMetadata":

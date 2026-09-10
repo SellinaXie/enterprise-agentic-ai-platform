@@ -67,7 +67,7 @@ class RetrievedEvidenceResponse(BaseModel):
     document_id: UUID
     document_title: str
     content: str
-    similarity_score: float
+    similarity_score: float | None
     source_type: KnowledgeSourceType
     metadata: dict[str, Any]
 

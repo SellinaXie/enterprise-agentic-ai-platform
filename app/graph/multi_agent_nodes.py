@@ -157,6 +157,7 @@ class MultiAgentGraphNodes:
             "tool_history": list(outcome.tool_history),
             "evidence_steps_used": outcome.steps_used,
             "evidence_termination_reason": outcome.termination_reason,
+            "graph_retrieval": outcome.graph_retrieval,
             "evidence_status": MultiAgentStatus.COMPLETED,
             "evidence_duration_ms": _elapsed_ms(started),
             "evidence_trace": trace,
@@ -369,6 +370,7 @@ class MultiAgentGraphNodes:
                 else MultiAgentTerminationReason.COMPLETED
             ),
             trace=trace,
+            graph_retrieval=state["graph_retrieval"],
         )
         return {
             "final_result": result,

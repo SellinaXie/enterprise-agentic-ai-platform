@@ -7,6 +7,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.knowledge import KnowledgeSourceType, RetrievedEvidence
+from app.models.knowledge_graph import (
+    GraphNeighborhood,
+    GraphRetrievalExecutionMetadata,
+    KnowledgeEntityType,
+)
 
 
 class SearchKnowledgeArguments(BaseModel):
@@ -24,6 +29,16 @@ class GetKnowledgeDocumentArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     document_id: UUID
+
+
+class SearchKnowledgeGraphArguments(BaseModel):
+    """Strict bounded graph-search arguments exposed only to the Evidence Agent."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    query: str = Field(min_length=1, max_length=4_000)
+    max_depth: int = Field(ge=1, le=5)
+    entity_types: list[KnowledgeEntityType] | None = Field(max_length=11)
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +62,8 @@ class ToolExecutionResult:
     summary: str
     evidence: tuple[RetrievedEvidence, ...] = ()
     document: ObservedKnowledgeDocument | None = None
+    graph_neighborhood: GraphNeighborhood | None = None
+    graph_retrieval: GraphRetrievalExecutionMetadata | None = None
     error_code: str | None = None
     cached: bool = False
 
@@ -63,3 +80,4 @@ class ToolHistoryEntry:
     call_fingerprint: str
     cached: bool
     error_code: str | None = None
+    graph_retrieval: GraphRetrievalExecutionMetadata | None = None
