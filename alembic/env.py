@@ -9,6 +9,8 @@ from app.core.config import Settings
 from app.db.base import Base
 from app.db.models import (  # noqa: F401
     AssessmentModel,
+    AssessmentRuntimeStateModel,
+    HumanReviewEventModel,
     KnowledgeChunkModel,
     KnowledgeDocumentModel,
 )

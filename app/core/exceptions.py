@@ -67,6 +67,27 @@ class AssessmentNotFoundError(ApplicationError):
     public_message = "The requested assessment was not found."
 
 
+class RuntimeStateNotFoundError(ApplicationError):
+    """Raised when an assessment has no V7C checkpoint."""
+
+    error_code = "runtime_state_not_found"
+    public_message = "Runtime governance state is not available for this assessment."
+
+
+class InvalidReviewTransitionError(ApplicationError):
+    """Raised for duplicate or out-of-order human actions."""
+
+    error_code = "invalid_review_transition"
+    public_message = "The requested human review action is not valid in the current state."
+
+
+class RevisionLimitReachedError(ApplicationError):
+    """Raised when the bounded review loop has been exhausted."""
+
+    error_code = "revision_limit_reached"
+    public_message = "The maximum number of human-requested revisions has been reached."
+
+
 class EmbeddingNotConfiguredError(ApplicationError):
     """Raised when knowledge embedding is requested without provider credentials."""
 

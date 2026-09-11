@@ -10,6 +10,7 @@ class AssessmentStatus(StrEnum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    PENDING_REVIEW = "pending_review"
 
 
 class SuitabilityLevel(StrEnum):
@@ -64,6 +65,7 @@ class RiskSeverity(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    CRITICAL = "critical"
 
 
 class ExternalEvidenceStatus(StrEnum):

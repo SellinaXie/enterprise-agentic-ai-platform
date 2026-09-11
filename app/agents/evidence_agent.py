@@ -3,7 +3,8 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from time import perf_counter, sleep
+from typing import Any, Protocol
 
 from openai import OpenAI, OpenAIError
 
@@ -23,6 +24,9 @@ from app.core.exceptions import (
 )
 from app.models.knowledge import RetrievedEvidence
 from app.models.knowledge_graph import GraphNeighborhood, GraphRetrievalExecutionMetadata
+from app.runtime.metrics import RuntimeMetricsRecorder
+from app.runtime.models import RetryPolicy
+from app.runtime.resilience import run_with_retry
 from app.schemas.assessment import AssessmentRequest
 from app.tools.models import ObservedKnowledgeDocument, ToolExecutionResult, ToolHistoryEntry
 from app.tools.permissions import AgentToolPermissions
@@ -63,6 +67,10 @@ class OpenAIEvidenceAgent:
         store_responses: bool,
         retry_limit: int,
         client_provider: Callable[[], OpenAI],
+        retry_base_delay_ms: int = 250,
+        timeout_seconds: float | None = None,
+        metrics: RuntimeMetricsRecorder | None = None,
+        sleeper: Callable[[float], None] = sleep,
     ) -> None:
         self._model = model
         self._tools = tools
@@ -71,10 +79,21 @@ class OpenAIEvidenceAgent:
         self._max_tool_calls = max_tool_calls
         self._store_responses = store_responses
         self._client_provider = client_provider
+        self._retry_policy = RetryPolicy(
+            max_retries=retry_limit,
+            base_delay_ms=retry_base_delay_ms,
+        )
+        self._timeout_seconds = timeout_seconds
+        self._metrics = metrics
+        self._sleeper = sleeper
         self._structured = OpenAIStructuredOutput(
             model=model,
             store_responses=store_responses,
             retry_limit=retry_limit,
+            retry_base_delay_ms=retry_base_delay_ms,
+            timeout_seconds=timeout_seconds,
+            metrics=metrics,
+            sleeper=sleeper,
             client_provider=client_provider,
         )
 
@@ -163,28 +182,47 @@ class OpenAIEvidenceAgent:
         step: int,
     ) -> tuple[str, dict[str, object]] | None:
         try:
-            response = self._client_provider().responses.create(
-                model=self._model,
-                input=[
-                    {"role": "system", "content": EVIDENCE_AGENT_SYSTEM_INSTRUCTIONS},
-                    {
-                        "role": "user",
-                        "content": build_evidence_decision_input(
-                            request=request,
-                            evidence=evidence,
-                            documents=documents,
-                            history=history,
-                            graph_neighborhoods=graph_neighborhoods,
-                            step=step,
-                            max_steps=self._max_steps,
-                        ),
-                    },
-                ],
-                tools=self._permissions.schemas_for(MultiAgentName.EVIDENCE, self._tools),
-                tool_choice="auto",
-                parallel_tool_calls=False,
-                max_output_tokens=200,
-                store=self._store_responses,
+            decision_input = build_evidence_decision_input(
+                request=request,
+                evidence=evidence,
+                documents=documents,
+                history=history,
+                graph_neighborhoods=graph_neighborhoods,
+                step=step,
+                max_steps=self._max_steps,
+            )
+
+            def request_provider() -> Any:
+                started = perf_counter()
+                response = None
+                kwargs: dict[str, Any] = {
+                    "model": self._model,
+                    "input": [
+                        {"role": "system", "content": EVIDENCE_AGENT_SYSTEM_INSTRUCTIONS},
+                        {"role": "user", "content": decision_input},
+                    ],
+                    "tools": self._permissions.schemas_for(MultiAgentName.EVIDENCE, self._tools),
+                    "tool_choice": "auto",
+                    "parallel_tool_calls": False,
+                    "max_output_tokens": 200,
+                    "store": self._store_responses,
+                }
+                if self._timeout_seconds is not None:
+                    kwargs["timeout"] = self._timeout_seconds
+                try:
+                    response = self._client_provider().responses.create(**kwargs)
+                    return response
+                finally:
+                    if self._metrics is not None:
+                        self._metrics.record_model_call(
+                            max(0, round((perf_counter() - started) * 1_000)), response
+                        )
+
+            response = run_with_retry(
+                request_provider,
+                policy=self._retry_policy,
+                sleeper=self._sleeper,
+                on_retry=(self._metrics.record_retry if self._metrics is not None else None),
             )
         except OpenAIClientNotConfiguredError:
             raise

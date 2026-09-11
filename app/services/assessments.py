@@ -1,6 +1,7 @@
 """Assessment application service."""
 
 import logging
+from time import perf_counter
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -63,6 +64,12 @@ class AssessmentRepositoryProtocol(Protocol):
         execution_metadata: dict[str, Any] | None = None,
     ) -> PersistedAssessment | None: ...
 
+    def mark_pending_review(
+        self,
+        assessment_id: UUID,
+        execution_metadata: dict[str, Any] | None = None,
+    ) -> PersistedAssessment | None: ...
+
     def mark_failed(
         self,
         assessment_id: UUID,
@@ -117,6 +124,22 @@ class MultiAgentAssessmentWorkflowProtocol(Protocol):
     ) -> AgentWorkflowOutput: ...
 
 
+class RuntimeGovernanceProtocol(Protocol):
+    """Optional post-generation decision boundary enabled only for V7C."""
+
+    def process_candidate(
+        self,
+        *,
+        assessment_id: UUID,
+        result: AssessmentResult,
+        evidence: tuple[RetrievedEvidence, ...],
+        execution: ExecutionMetadata,
+        duration_ms: int,
+        provenance_valid: bool = True,
+        retrieval_duration_ms: int | None = None,
+    ) -> PersistedAssessment: ...
+
+
 class AssessmentService:
     """Coordinate generation and explicit persistence transaction boundaries."""
 
@@ -127,12 +150,14 @@ class AssessmentService:
         rag_service: AssessmentRAGProtocol | None = None,
         agentic_workflow: AgenticAssessmentWorkflowProtocol | None = None,
         multi_agent_workflow: MultiAgentAssessmentWorkflowProtocol | None = None,
+        runtime_governance: RuntimeGovernanceProtocol | None = None,
     ) -> None:
         self._generator = generator
         self._repository = repository
         self._rag_service = rag_service
         self._agentic_workflow = agentic_workflow
         self._multi_agent_workflow = multi_agent_workflow
+        self._runtime_governance = runtime_governance
 
     def generate_assessment(self, request: AssessmentRequest) -> AssessmentResponse:
         """Persist lifecycle state around synchronous structured generation."""
@@ -164,9 +189,11 @@ class AssessmentService:
 
         logger.info("assessment_marked_processing", extra={**log_context, "status": "processing"})
         logger.info("assessment_generation_started", extra=log_context)
+        generation_started = perf_counter()
 
         evidence: tuple[RetrievedEvidence, ...] = ()
         execution: ExecutionMetadata = DeterministicExecutionMetadata()
+        retrieval_duration_ms: int | None = None
         try:
             if self._multi_agent_workflow is not None:
                 workflow_result = self._multi_agent_workflow.run(
@@ -187,7 +214,13 @@ class AssessmentService:
             else:
                 rag_context = None
                 if self._rag_service is not None:
-                    preparation = self._rag_service.prepare(request)
+                    retrieval_started = perf_counter()
+                    try:
+                        preparation = self._rag_service.prepare(request)
+                    finally:
+                        retrieval_duration_ms = max(
+                            0, round((perf_counter() - retrieval_started) * 1_000)
+                        )
                     evidence = preparation.evidence
                     rag_context = preparation.context
                     graph_retrieval = getattr(preparation, "graph_retrieval", None)
@@ -201,6 +234,7 @@ class AssessmentService:
                     else build_assessment_prompt(request)
                 )
                 result = self._generator.generate(prompt)
+            provenance_valid = self._provenance_is_valid(result, evidence)
             result = self._apply_grounding_metadata(result, evidence)
         except ApplicationError as exc:
             self._persist_failure(
@@ -231,11 +265,22 @@ class AssessmentService:
             raise unexpected_error from exc
 
         try:
-            completed_record = self._repository.mark_completed(
-                assessment_id,
-                result.model_dump(mode="json"),
-                execution.model_dump(mode="json"),
-            )
+            if self._runtime_governance is not None:
+                completed_record = self._runtime_governance.process_candidate(
+                    assessment_id=assessment_id,
+                    result=result,
+                    evidence=evidence,
+                    execution=execution,
+                    duration_ms=max(0, round((perf_counter() - generation_started) * 1_000)),
+                    provenance_valid=provenance_valid,
+                    retrieval_duration_ms=retrieval_duration_ms,
+                )
+            else:
+                completed_record = self._repository.mark_completed(
+                    assessment_id,
+                    result.model_dump(mode="json"),
+                    execution.model_dump(mode="json"),
+                )
             if completed_record is None:
                 raise PersistenceError
             self._repository.commit()
@@ -244,15 +289,15 @@ class AssessmentService:
 
         logger.info(
             "assessment_result_persisted",
-            extra={**log_context, "status": "completed"},
+            extra={**log_context, "status": completed_record.status.value},
         )
         logger.info(
             "grounded_assessment_generated",
             extra={**log_context, "retrieval_count": len(evidence)},
         )
         logger.info(
-            "assessment_completed",
-            extra={**log_context, "status": "completed"},
+            "assessment_generation_finalized",
+            extra={**log_context, "status": completed_record.status.value},
         )
         return self._to_response(completed_record)
 
@@ -334,6 +379,17 @@ class AssessmentService:
                 "external_evidence_status": status,
                 "source_references": references,
             }
+        )
+
+    @staticmethod
+    def _provenance_is_valid(
+        result: AssessmentResult,
+        evidence: tuple[RetrievedEvidence, ...],
+    ) -> bool:
+        allowed = {(item.document_id, item.chunk_id) for item in evidence}
+        return all(
+            (reference.document_id, reference.chunk_id) in allowed
+            for reference in result.source_references
         )
 
     @staticmethod

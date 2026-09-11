@@ -9,6 +9,7 @@ from app.knowledge_graph.retrieval import GraphRetrievalService
 from app.models.knowledge_graph import GraphRetrievalExecutionMetadata
 from app.rag.retrieval import RetrievalService
 from app.repositories.knowledge_documents import KnowledgeDocumentRepository
+from app.runtime.metrics import RuntimeMetricsRecorder
 from app.tools.models import (
     GetKnowledgeDocumentArguments,
     ObservedKnowledgeDocument,
@@ -26,6 +27,8 @@ def build_knowledge_tool_registry(
     retrieval: RetrievalService,
     documents: KnowledgeDocumentRepository,
     graph: GraphRetrievalService | None = None,
+    timeout_seconds: float | None = None,
+    metrics: RuntimeMetricsRecorder | None = None,
 ) -> ToolRegistry:
     """Build V4's two tools, optionally adding the Evidence-only V6 graph tool."""
 
@@ -137,4 +140,8 @@ def build_knowledge_tool_registry(
                 handler=search_knowledge_graph,
             )
         )
-    return ToolRegistry(definitions)
+    return ToolRegistry(
+        definitions,
+        timeout_seconds=timeout_seconds,
+        metrics=metrics,
+    )

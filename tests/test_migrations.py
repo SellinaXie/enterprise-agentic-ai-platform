@@ -18,7 +18,7 @@ def alembic_config(output_buffer: StringIO | None = None) -> Config:
 def test_alembic_has_one_linear_head() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
-    assert script.get_heads() == ["20260910_0004"]
+    assert script.get_heads() == ["20260910_0005"]
     assert script.get_base() == "20260909_0001"
 
 
@@ -48,6 +48,23 @@ def test_initial_migration_renders_postgresql_schema(monkeypatch: MonkeyPatch) -
     assert "CREATE TABLE knowledge_entity_mentions" in sql
     assert "CREATE TABLE knowledge_relationships" in sql
     assert "knowledge_relationships_no_self_edge" in sql
+    assert "CREATE TABLE assessment_runtime_states" in sql
+    assert "CREATE TABLE human_review_events" in sql
+    assert "pending_review" in sql
+
+
+def test_v7c_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:
+    output = StringIO()
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://migration_test:placeholder@localhost/migration_test",
+    )
+
+    command.downgrade(alembic_config(output), "20260910_0005:20260910_0004", sql=True)
+
+    sql = output.getvalue()
+    assert "DROP TABLE human_review_events" in sql
+    assert "DROP TABLE assessment_runtime_states" in sql
 
 
 def test_v6_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:

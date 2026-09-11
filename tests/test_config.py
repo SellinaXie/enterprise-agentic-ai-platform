@@ -42,6 +42,19 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.graph_min_confidence == 0.5
     assert settings.max_upload_size_mb == 10
     assert settings.pdf_min_extracted_characters == 100
+    assert settings.runtime_risk_gate_enabled is False
+    assert settings.runtime_medium_risk_decision == "complete_with_warning"
+    assert settings.runtime_high_risk_decision == "require_human_review"
+    assert settings.runtime_critical_risk_decision == "block_and_escalate"
+    assert settings.max_human_revisions == 2
+    assert settings.provider_max_retries == 2
+    assert settings.provider_retry_base_delay_ms == 250
+    assert settings.model_timeout_seconds == 30
+    assert settings.embedding_timeout_seconds == 30
+    assert settings.tool_timeout_seconds == 10
+    assert settings.graph_extraction_timeout_seconds == 30
+    assert settings.model_input_cost_per_1m_tokens is None
+    assert settings.model_output_cost_per_1m_tokens is None
 
 
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:

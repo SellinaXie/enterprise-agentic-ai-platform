@@ -1,10 +1,93 @@
 # Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V7B backend for grounded enterprise AI architecture assessments. V7B preserves
-the complete V1-V7A implementation and adds deterministic assessment-quality evaluation across
-the existing deterministic, single-agent, and multi-agent modes. Architecture remains the broad
-purpose of the platform; enterprise risk, controls, and governance are first-class quality
-dimensions rather than a replacement compliance-checking product.
+Production-minded V7C backend for grounded enterprise AI architecture assessments. V7C preserves
+the complete V1-V7B implementation and adds runtime reliability, deterministic risk controls,
+durable human review, and privacy-safe operational telemetry around the existing deterministic,
+single-agent, and multi-agent modes. Architecture remains the broad purpose of the platform;
+enterprise risk, controls, and governance are first-class dimensions rather than a replacement
+compliance-checking product.
+
+## Runtime Reliability & Risk Controls
+
+The platform no longer assumes that every AI-generated assessment should automatically become a
+final decision. After generation, schema validation, synthesis, and provenance sanitization, one
+central framework-neutral gate evaluates lightweight structured signals and returns exactly one
+of `auto_complete`, `complete_with_warning`, `require_human_review`, or
+`block_and_escalate`. Machine-readable reason codes explain every non-automatic outcome.
+
+The default policy auto-completes low-risk candidates, completes medium-risk candidates with a
+warning, sends high-risk candidates to human review, and blocks critical-risk candidates. Missing
+required evidence, degraded execution, unavailable specialists, tool/retrieval failures, missing
+expected oversight, and detectable unsupported claims can strengthen the decision. High-risk
+invalid provenance and critical risk without mitigation block completion. Policy thresholds and
+condition switches are configuration, not banking-specific rules or a regulatory framework.
+
+`RUNTIME_RISK_GATE_ENABLED=false` preserves V1–V7B behavior. When enabled, review-required
+candidates move to the explicit `pending_review` assessment state. The public assessment result
+remains null while the validated candidate, execution metadata, gate decision, and telemetry are
+stored in `assessment_runtime_states`. This is a durable application-level checkpoint shared by
+all three execution modes; it does not claim provider-side continuation or replay an LLM call.
+
+Review actions are additive endpoints:
+
+```text
+GET  /api/v1/assessments/{id}/runtime-status
+GET  /api/v1/assessments/{id}/reviews
+POST /api/v1/assessments/{id}/reviews/approve
+POST /api/v1/assessments/{id}/reviews/reject
+POST /api/v1/assessments/{id}/reviews/request-revision
+```
+
+Approval finalizes the exact persisted validated candidate. Rejection stores only a stable safe
+failure. A revision request preserves the candidate and all earlier events, increments a bounded
+counter, and can be resumed only through the trusted internal revision path after a new candidate
+has been generated and validated. Reviewer IDs and comments are optional bounded strings;
+comments are untrusted audit content and are never executed, added to system prompts, or allowed
+to change tool permissions. `human_review_events` is append-only at the repository boundary.
+
+Provider operations use explicit per-call model, embedding, and graph-extraction timeouts plus
+bounded retries for recognized timeouts, connection failures, rate limits, and selected provider
+5xx failures. Validation and other permanent failures are not retried. Approved read-only tools
+run through a configurable timeout boundary and return the safe `tool_timeout` error. Failure
+categories are controlled values; provider exception text is never returned to clients.
+
+Operational telemetry records counters and durations only: execution mode and health, execution
+and human-wait latency, model and embedding calls, model-call durations, tool calls, vector/graph
+use, specialist and synthesis durations, retries, timeouts, degradation, termination, gate and
+review events, and provider-reported tokens when available. Cost remains `null` unless explicit
+input/output prices are configured. Telemetry never contains prompts, private reasoning,
+embeddings, source documents, tool arguments, secrets, or raw provider messages. These fields
+support future evidence-based mode comparisons; this repository makes no live performance claim.
+
+```dotenv
+RUNTIME_RISK_GATE_ENABLED=false
+RUNTIME_MEDIUM_RISK_DECISION=complete_with_warning
+RUNTIME_HIGH_RISK_DECISION=require_human_review
+RUNTIME_CRITICAL_RISK_DECISION=block_and_escalate
+RUNTIME_REVIEW_ON_INSUFFICIENT_EVIDENCE=true
+RUNTIME_REVIEW_ON_DEGRADED_EXECUTION=true
+RUNTIME_REVIEW_ON_SPECIALIST_UNAVAILABLE=true
+RUNTIME_REVIEW_ON_TOOL_FAILURE=true
+RUNTIME_BLOCK_HIGH_RISK_INVALID_PROVENANCE=true
+RUNTIME_BLOCK_CRITICAL_MISSING_MITIGATION=true
+MAX_HUMAN_REVISIONS=2
+
+PROVIDER_MAX_RETRIES=2
+PROVIDER_RETRY_BASE_DELAY_MS=250
+MODEL_TIMEOUT_SECONDS=30
+EMBEDDING_TIMEOUT_SECONDS=30
+TOOL_TIMEOUT_SECONDS=10
+GRAPH_EXTRACTION_TIMEOUT_SECONDS=30
+# Leave unset unless explicit current pricing is maintained.
+# MODEL_INPUT_COST_PER_1M_TOKENS=0.00
+# MODEL_OUTPUT_COST_PER_1M_TOKENS=0.00
+```
+
+V7C human review is a workflow control, not a security boundary. It does not provide authenticated
+reviewer identity, enterprise RBAC/ABAC, SSO, tenant isolation, or cryptographic approval
+assurance. Production identity and authorization belong to V8. This version also adds no
+frontend, Docker/deployment/CI layer, external monitoring SaaS, LangSmith requirement, MCP
+connector, or enterprise secrets infrastructure.
 
 ## V7B architecture and risk/governance quality evaluation
 
@@ -109,8 +192,9 @@ Synthetic benchmark performance
 real-world production assurance
 ```
 
-V7B adds no endpoint, database table, migration, agent role, tool permission, or runtime quality
-gate. It does not execute benchmark content.
+The V7B evaluation release added no endpoint, database table, migration, agent role, tool
+permission, or runtime quality gate. V7C adds the runtime controls described above and still does
+not execute benchmark content during production assessment requests.
 
 ## V7A deterministic retrieval evaluation
 
@@ -194,8 +278,8 @@ Implemented: deterministic retrieval evaluation, vector metrics, graph retrieval
 retrieval comparison, negative-query measurement, and provenance validation.
 
 Implemented in V7B: final assessment architecture/risk/governance evaluation and optional
-model-based judging. Observability and human-in-the-loop reliability controls remain planned for
-V7C. V7 as a whole is not complete.
+model-based judging. Implemented in V7C: internal operational telemetry, bounded resilience,
+central runtime gating, and durable human review. Productionization remains planned for V8.
 
 ## V6.5 enterprise document ingestion
 
@@ -359,9 +443,9 @@ branches write to separate typed state keys, so convergence never depends on com
   safer bounded recommendation under uncertainty, and returns the unchanged `AssessmentResult`.
 
 All specialist business handoffs are closed Pydantic schemas. Each OpenAI specialist output uses
-the Responses API structured-output parser; the small configured retry applies to provider or
-schema failure, not an open-ended self-repair loop. Prompts and raw provider conversations are not
-passed between agents.
+the Responses API structured-output parser; the bounded configured retry applies only to
+recognized transient provider failures, not schema validation or an open-ended self-repair loop.
+Prompts and raw provider conversations are not passed between agents.
 
 ### Execution modes and precedence
 
@@ -589,7 +673,13 @@ MULTI_AGENT_WORKFLOW_ENABLED=false
 EVIDENCE_AGENT_MAX_STEPS=4
 EVIDENCE_AGENT_MAX_TOOL_CALLS=4
 MULTI_AGENT_MAX_FAILURES=2
-SPECIALIST_RETRY_LIMIT=1
+
+PROVIDER_MAX_RETRIES=2
+PROVIDER_RETRY_BASE_DELAY_MS=250
+MODEL_TIMEOUT_SECONDS=30
+EMBEDDING_TIMEOUT_SECONDS=30
+TOOL_TIMEOUT_SECONDS=10
+GRAPH_EXTRACTION_TIMEOUT_SECONDS=30
 ```
 
 - `text-embedding-3-small` is requested at 1,536 dimensions. The typed setting, ORM vector type,
@@ -615,8 +705,9 @@ SPECIALIST_RETRY_LIMIT=1
   tool loop. Cache hits still count as calls.
 - `MULTI_AGENT_MAX_FAILURES` is enforced before synthesis and defaults to two; synthesis still
   requires at least one successfully available specialist analysis.
-- `SPECIALIST_RETRY_LIMIT=1` permits one retry after the initial schema-constrained specialist
-  request. It does not create an agent-directed repair loop.
+- `PROVIDER_MAX_RETRIES` applies one centralized bounded transient-failure policy to model,
+  embedding, and schema-constrained specialist requests. `OPENAI_MAX_RETRIES` remains accepted as
+  a backward-compatible environment alias. Schema-validation failures are never retried.
 - `KNOWLEDGE_GRAPH_ENABLED=false` preserves V1-V5 behavior and disables graph extraction,
   traversal, hybrid assessment retrieval, and the Evidence Agent graph tool by default.
 - `GRAPH_MAX_DEPTH`, `GRAPH_MAX_ENTITIES`, and `GRAPH_MIN_CONFIDENCE` are hard application-owned
@@ -720,10 +811,12 @@ baseline rather than tuning prematurely.
 
 ## Grounded assessment behavior
 
-`POST /api/v1/assessments` retains its V2 persistence lifecycle:
+`POST /api/v1/assessments` retains its V2 lifecycle and adds one explicit V7C pause state when the
+runtime gate is enabled:
 
 ```text
-pending → processing → completed | failed
+pending → processing → completed | failed | pending_review
+                                      pending_review → completed | failed | revised candidate
 ```
 
 When RAG is enabled, the service deterministically combines company context, industry, business
@@ -777,6 +870,13 @@ V7B is also a version-controlled benchmark and local report layer. Its normalize
 contracts deliberately do not modify the stable `AssessmentResult`; Alembic head remains
 `20260910_0004`.
 
+V7C revision `20260910_0005` adds `pending_review` to assessment lifecycle values plus
+`assessment_runtime_states` for the current durable checkpoint and `human_review_events` for
+append-only audit history. Candidate results, gate state, safe execution metadata, and operational
+telemetry use PostgreSQL JSONB; IDs use UUID and timestamps use TIMESTAMPTZ. Its downgrade removes
+the V7C tables and restores the prior assessment-status vocabulary. Alembic head is
+`20260910_0005`.
+
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
 pgvector operators.
@@ -821,6 +921,9 @@ governance, human oversight, architecture fit, over-engineering, claim support, 
 abstention, specialist preservation, synthesis transparency, degraded/failure reporting,
 three-mode comparison, optional-judge schema/security, CLI, and reproducibility coverage. The
 judge and provider boundary are mocked.
+V7C adds policy-outcome, reason-code, durable review, approval, rejection, bounded revision,
+three-mode resume, invalid-transition, comment-injection isolation, retry/backoff, per-boundary
+timeout, failure classification, telemetry accuracy/privacy, migration, and additive API coverage.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -848,6 +951,9 @@ test database. All fixtures are synthetic; no external knowledge dataset is requ
 
 V6.5 adds a PostgreSQL round trip for file-origin document metadata, chunk page provenance, and
 normalized deduplication without requiring a binary fixture or external dataset in the database.
+
+V7C adds a PostgreSQL checkpoint/restart boundary with JSONB candidate state, UUID audit events,
+TIMESTAMPTZ verification, and approval-driven finalization. It uses only synthetic fixtures.
 
 Do not run multiple test processes against the same test database. Run only fast tests with:
 

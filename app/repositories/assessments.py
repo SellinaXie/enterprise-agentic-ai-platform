@@ -117,6 +117,27 @@ class AssessmentRepository:
         self._session.flush()
         return _to_record(model)
 
+    def mark_pending_review(
+        self,
+        assessment_id: UUID,
+        execution_metadata: Mapping[str, Any] | None = None,
+    ) -> PersistedAssessment | None:
+        """Pause finalization while the candidate remains in runtime checkpoint storage."""
+        model = self._session.get(AssessmentModel, assessment_id)
+        if model is None:
+            return None
+        model.status = AssessmentStatus.PENDING_REVIEW
+        model.result_payload = None
+        model.execution_metadata = (
+            dict(execution_metadata) if execution_metadata is not None else None
+        )
+        model.error_code = None
+        model.error_message = None
+        model.completed_at = None
+        model.updated_at = self._clock()
+        self._session.flush()
+        return _to_record(model)
+
     def mark_failed(
         self,
         assessment_id: UUID,

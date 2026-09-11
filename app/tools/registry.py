@@ -4,14 +4,18 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from time import perf_counter
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
 from app.core.exceptions import ApplicationError
+from app.runtime.metrics import RuntimeMetricsRecorder
+from app.runtime.resilience import OperationTimeoutError, run_with_timeout
 from app.tools.models import ToolExecutionResult
 
 ToolHandler = Callable[[BaseModel], ToolExecutionResult]
+TimeoutRunner = Callable[[Callable[[], ToolExecutionResult], float], ToolExecutionResult]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,11 +43,23 @@ class ToolDefinition:
 class ToolRegistry:
     """Reject every tool except the definitions supplied at construction time."""
 
-    def __init__(self, definitions: list[ToolDefinition]) -> None:
+    def __init__(
+        self,
+        definitions: list[ToolDefinition],
+        *,
+        timeout_seconds: float | None = None,
+        timeout_runner: TimeoutRunner = lambda operation, timeout: run_with_timeout(
+            operation, timeout_seconds=timeout
+        ),
+        metrics: RuntimeMetricsRecorder | None = None,
+    ) -> None:
         names = [definition.name for definition in definitions]
         if len(names) != len(set(names)):
             raise ValueError("Tool names must be unique")
         self._definitions = {definition.name: definition for definition in definitions}
+        self._timeout_seconds = timeout_seconds
+        self._timeout_runner = timeout_runner
+        self._metrics = metrics
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -94,8 +110,22 @@ class ToolRegistry:
         if cache is not None and fingerprint in cache:
             return replace(cache[fingerprint], cached=True), fingerprint, argument_keys
 
+        started = perf_counter()
         try:
-            result = definition.handler(arguments)
+            result = (
+                self._timeout_runner(lambda: definition.handler(arguments), self._timeout_seconds)
+                if self._timeout_seconds is not None
+                else definition.handler(arguments)
+            )
+        except OperationTimeoutError:
+            if self._metrics is not None:
+                self._metrics.timeout_count += 1
+            result = ToolExecutionResult(
+                tool_name=name,
+                success=False,
+                summary="The approved tool exceeded its configured time limit.",
+                error_code="tool_timeout",
+            )
         except ApplicationError as exc:
             result = ToolExecutionResult(
                 tool_name=name,
@@ -110,6 +140,9 @@ class ToolRegistry:
                 summary="The approved tool could not complete the request.",
                 error_code="tool_execution_error",
             )
+        finally:
+            if self._metrics is not None:
+                self._metrics.record_tool_call(max(0, round((perf_counter() - started) * 1_000)))
 
         if cache is not None:
             cache[fingerprint] = result

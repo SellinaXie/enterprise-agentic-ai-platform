@@ -5,7 +5,9 @@ from typing import cast
 from unittest.mock import Mock
 from uuid import uuid4
 
-from openai import OpenAI
+import httpx
+import pytest
+from openai import APIConnectionError, OpenAI
 
 from app.agents.architecture_agent import OpenAIArchitectureAgent
 from app.agents.architecture_prompt import build_architecture_input
@@ -16,6 +18,7 @@ from app.agents.risk_governance_prompt import build_risk_governance_input
 from app.agents.structured_output import OpenAIStructuredOutput
 from app.agents.synthesis_agent import OpenAISynthesisAgent
 from app.agents.synthesis_prompt import build_synthesis_input
+from app.core.exceptions import InvalidLLMResponseError
 from app.models.knowledge import KnowledgeSourceType, RetrievedEvidence
 from app.schemas.assessment import AssessmentRequest
 from app.tools.models import SearchKnowledgeArguments, ToolExecutionResult
@@ -104,7 +107,7 @@ def test_toolless_specialists_use_schema_parse_without_tool_arguments() -> None:
 def test_structured_output_retry_is_bounded() -> None:
     client = Mock()
     client.responses.parse.side_effect = [
-        SimpleNamespace(output_parsed=None),
+        APIConnectionError(request=httpx.Request("POST", "https://api.openai.com/v1/responses")),
         SimpleNamespace(output_parsed=build_architecture_recommendation()),
     ]
     structured = OpenAIStructuredOutput(
@@ -112,6 +115,7 @@ def test_structured_output_retry_is_bounded() -> None:
         store_responses=False,
         retry_limit=1,
         client_provider=lambda: cast(OpenAI, client),
+        sleeper=lambda _: None,
     )
 
     result = structured.generate(
@@ -122,6 +126,26 @@ def test_structured_output_retry_is_bounded() -> None:
 
     assert result == build_architecture_recommendation()
     assert client.responses.parse.call_count == 2
+
+
+def test_structured_output_validation_failure_is_not_retried() -> None:
+    client = Mock()
+    client.responses.parse.return_value = SimpleNamespace(output_parsed=None)
+    structured = OpenAIStructuredOutput(
+        model="gpt-4.1-mini",
+        store_responses=False,
+        retry_limit=2,
+        client_provider=lambda: cast(OpenAI, client),
+    )
+
+    with pytest.raises(InvalidLLMResponseError):
+        structured.generate(
+            system="architecture-only",
+            user="typed-input",
+            output_model=type(build_architecture_recommendation()),
+        )
+
+    client.responses.parse.assert_called_once()
 
 
 def test_evidence_agent_reuses_registry_and_strips_invented_brief_provenance() -> None:

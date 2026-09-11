@@ -36,21 +36,38 @@ from app.repositories.assessments import AssessmentRepository
 from app.repositories.knowledge_chunks import KnowledgeChunkRepository
 from app.repositories.knowledge_documents import KnowledgeDocumentRepository
 from app.repositories.knowledge_graph import KnowledgeGraphRepository
+from app.repositories.runtime_reviews import RuntimeReviewRepository
+from app.runtime.gate import RuntimeRiskGate
+from app.runtime.metrics import RuntimeMetricsRecorder
+from app.runtime.models import RetryPolicy, RuntimeRiskPolicy
 from app.services.assessments import AssessmentGenerator, AssessmentService
 from app.services.llm import OpenAIAssessmentGenerator, get_openai_client
+from app.services.runtime_governance import RuntimeGovernanceService
 from app.tools.knowledge import build_knowledge_tool_registry
 from app.tools.permissions import AgentToolPermissions
 from app.tools.registry import ToolRegistry
 
 
+def get_runtime_metrics_recorder() -> RuntimeMetricsRecorder:
+    """Create one request-scoped privacy-safe metrics accumulator."""
+    return RuntimeMetricsRecorder()
+
+
 def get_assessment_generator(
     settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> AssessmentGenerator:
     """Build the structured generator with a lazily created OpenAI client."""
     return OpenAIAssessmentGenerator(
         model=settings.openai_model,
         store_responses=settings.openai_store_responses,
         client_provider=partial(get_openai_client, settings),
+        retry_policy=RetryPolicy(
+            max_retries=settings.provider_max_retries,
+            base_delay_ms=settings.provider_retry_base_delay_ms,
+        ),
+        timeout_seconds=settings.model_timeout_seconds,
+        metrics=metrics,
     )
 
 
@@ -59,6 +76,42 @@ def get_assessment_repository(
 ) -> AssessmentRepository:
     """Build a repository around the request-scoped database session."""
     return AssessmentRepository(session)
+
+
+def get_runtime_review_repository(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> RuntimeReviewRepository:
+    """Build the durable V7C checkpoint and audit repository."""
+    return RuntimeReviewRepository(session)
+
+
+def get_runtime_governance_service(
+    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    reviews: Annotated[RuntimeReviewRepository, Depends(get_runtime_review_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
+) -> RuntimeGovernanceService:
+    """Build the framework-neutral runtime gate and review coordinator."""
+    policy = RuntimeRiskPolicy(
+        medium_risk_decision=settings.runtime_medium_risk_decision,
+        high_risk_decision=settings.runtime_high_risk_decision,
+        critical_risk_decision=settings.runtime_critical_risk_decision,
+        review_on_insufficient_evidence=settings.runtime_review_on_insufficient_evidence,
+        review_on_degraded_execution=settings.runtime_review_on_degraded_execution,
+        review_on_specialist_unavailable=settings.runtime_review_on_specialist_unavailable,
+        review_on_tool_failure=settings.runtime_review_on_tool_failure,
+        block_high_risk_invalid_provenance=(settings.runtime_block_high_risk_invalid_provenance),
+        block_critical_missing_mitigation=(settings.runtime_block_critical_missing_mitigation),
+        max_human_revisions=settings.max_human_revisions,
+    )
+    return RuntimeGovernanceService(
+        assessments=assessments,
+        reviews=reviews,
+        gate=RuntimeRiskGate(policy),
+        input_cost_per_million=settings.model_input_cost_per_1m_tokens,
+        output_cost_per_million=settings.model_output_cost_per_1m_tokens,
+        metrics=metrics,
+    )
 
 
 def get_knowledge_document_repository(
@@ -84,12 +137,19 @@ def get_knowledge_graph_repository(
 
 def get_embeddings_service(
     settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> OpenAIEmbeddingsService:
     """Build the dimension-constrained OpenAI embeddings adapter."""
     return OpenAIEmbeddingsService(
         model=settings.openai_embedding_model,
         dimension=settings.openai_embedding_dimension,
         client_provider=partial(get_openai_client, settings),
+        retry_policy=RetryPolicy(
+            max_retries=settings.provider_max_retries,
+            base_delay_ms=settings.provider_retry_base_delay_ms,
+        ),
+        timeout_seconds=settings.embedding_timeout_seconds,
+        metrics=metrics,
     )
 
 
@@ -170,12 +230,16 @@ def get_assessment_rag_service(
 
 def get_graph_structured_output(
     settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> OpenAIStructuredOutput:
     """Build the schema-constrained adapter used by per-chunk graph extraction."""
     return OpenAIStructuredOutput(
         model=settings.openai_model,
         store_responses=settings.openai_store_responses,
-        retry_limit=settings.specialist_retry_limit,
+        retry_limit=settings.provider_max_retries,
+        retry_base_delay_ms=settings.provider_retry_base_delay_ms,
+        timeout_seconds=settings.graph_extraction_timeout_seconds,
+        metrics=metrics,
         client_provider=partial(get_openai_client, settings),
     )
 
@@ -233,6 +297,7 @@ def get_file_ingestion_service(
 def get_assessment_agent(
     generator: Annotated[AssessmentGenerator, Depends(get_assessment_generator)],
     settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> OpenAIAssessmentAgent:
     """Build exactly one OpenAI-backed assessment reasoning agent."""
     return OpenAIAssessmentAgent(
@@ -240,6 +305,12 @@ def get_assessment_agent(
         generator=generator,
         store_responses=settings.openai_store_responses,
         client_provider=partial(get_openai_client, settings),
+        retry_policy=RetryPolicy(
+            max_retries=settings.provider_max_retries,
+            base_delay_ms=settings.provider_retry_base_delay_ms,
+        ),
+        timeout_seconds=settings.model_timeout_seconds,
+        metrics=metrics,
     )
 
 
@@ -249,9 +320,16 @@ def get_agent_tool_registry(
         KnowledgeDocumentRepository,
         Depends(get_knowledge_document_repository),
     ],
+    settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> ToolRegistry:
     """Expose only the two approved V4 read-only knowledge tools."""
-    return build_knowledge_tool_registry(retrieval=retrieval, documents=documents)
+    return build_knowledge_tool_registry(
+        retrieval=retrieval,
+        documents=documents,
+        timeout_seconds=settings.tool_timeout_seconds,
+        metrics=metrics,
+    )
 
 
 def get_evidence_tool_registry(
@@ -261,12 +339,16 @@ def get_evidence_tool_registry(
         Depends(get_knowledge_document_repository),
     ],
     graph: Annotated[GraphRetrievalService | None, Depends(get_graph_retrieval_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> ToolRegistry:
     """Preserve V4's registry and add graph search only for the V5 Evidence Agent."""
     return build_knowledge_tool_registry(
         retrieval=retrieval,
         documents=documents,
         graph=graph,
+        timeout_seconds=settings.tool_timeout_seconds,
+        metrics=metrics,
     )
 
 
@@ -289,12 +371,16 @@ def get_agentic_assessment_workflow(
 
 def get_multi_agent_structured_output(
     settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> OpenAIStructuredOutput:
     """Build the shared provider adapter; each specialist still has its own prompt and contract."""
     return OpenAIStructuredOutput(
         model=settings.openai_model,
         store_responses=settings.openai_store_responses,
-        retry_limit=settings.specialist_retry_limit,
+        retry_limit=settings.provider_max_retries,
+        retry_base_delay_ms=settings.provider_retry_base_delay_ms,
+        timeout_seconds=settings.model_timeout_seconds,
+        metrics=metrics,
         client_provider=partial(get_openai_client, settings),
     )
 
@@ -302,6 +388,7 @@ def get_multi_agent_structured_output(
 def get_evidence_agent(
     tools: Annotated[ToolRegistry, Depends(get_evidence_tool_registry)],
     settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
 ) -> OpenAIEvidenceAgent:
     """Build the only V5 specialist allowed to receive tool schemas."""
     return OpenAIEvidenceAgent(
@@ -311,7 +398,10 @@ def get_evidence_agent(
         max_steps=settings.evidence_agent_max_steps,
         max_tool_calls=settings.evidence_agent_max_tool_calls,
         store_responses=settings.openai_store_responses,
-        retry_limit=settings.specialist_retry_limit,
+        retry_limit=settings.provider_max_retries,
+        retry_base_delay_ms=settings.provider_retry_base_delay_ms,
+        timeout_seconds=settings.model_timeout_seconds,
+        metrics=metrics,
         client_provider=partial(get_openai_client, settings),
     )
 
@@ -374,6 +464,10 @@ def get_assessment_service(
         MultiAgentAssessmentWorkflow | None,
         Depends(get_multi_agent_assessment_workflow),
     ],
+    runtime_governance: Annotated[
+        RuntimeGovernanceService, Depends(get_runtime_governance_service)
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> AssessmentService:
     """Compose the service from provider and persistence boundaries."""
     return AssessmentService(
@@ -382,4 +476,5 @@ def get_assessment_service(
         rag_service,
         agentic_workflow=agentic_workflow,
         multi_agent_workflow=multi_agent_workflow,
+        runtime_governance=(runtime_governance if settings.runtime_risk_gate_enabled else None),
     )

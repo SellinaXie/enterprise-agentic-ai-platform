@@ -162,4 +162,10 @@ class AssessmentResponse(BaseModel):
             self.result is not None or self.error is None
         ):
             raise ValueError("Failed assessments require an error and no result")
+        elif self.status == AssessmentStatus.PENDING_REVIEW and (
+            self.result is not None or self.error is not None or self.completed_at is not None
+        ):
+            raise ValueError(
+                "Pending-review assessments require no public result, error, or completion time"
+            )
         return self

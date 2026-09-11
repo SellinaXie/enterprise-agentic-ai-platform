@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from time import perf_counter, sleep
 from typing import Any, Protocol
 
 from openai import OpenAI, OpenAIError
@@ -18,6 +19,9 @@ from app.core.exceptions import (
     OpenAIClientNotConfiguredError,
 )
 from app.models.knowledge import RetrievedEvidence
+from app.runtime.metrics import RuntimeMetricsRecorder
+from app.runtime.models import RetryPolicy
+from app.runtime.resilience import run_with_retry
 from app.schemas.assessment import AssessmentRequest, AssessmentResult
 from app.services.assessment_prompt import build_assessment_prompt
 from app.services.assessments import AssessmentGenerator
@@ -58,11 +62,19 @@ class OpenAIAssessmentAgent:
         generator: AssessmentGenerator,
         store_responses: bool = False,
         client_provider: Callable[[], OpenAI],
+        retry_policy: RetryPolicy | None = None,
+        timeout_seconds: float | None = None,
+        metrics: RuntimeMetricsRecorder | None = None,
+        sleeper: Callable[[float], None] = sleep,
     ) -> None:
         self._model = model
         self._generator = generator
         self._store_responses = store_responses
         self._client_provider = client_provider
+        self._retry_policy = retry_policy
+        self._timeout_seconds = timeout_seconds
+        self._metrics = metrics
+        self._sleeper = sleeper
 
     def decide(
         self,
@@ -85,17 +97,42 @@ class OpenAIAssessmentAgent:
             max_steps=max_steps,
         )
         try:
-            response = self._client_provider().responses.create(
-                model=self._model,
-                input=[
-                    {"role": "system", "content": AGENT_SYSTEM_INSTRUCTIONS},
-                    {"role": "user", "content": decision_input},
-                ],
-                tools=tool_schemas,
-                tool_choice="auto",
-                parallel_tool_calls=False,
-                max_output_tokens=200,
-                store=self._store_responses,
+
+            def request_provider() -> Any:
+                started = perf_counter()
+                response = None
+                kwargs: dict[str, Any] = {
+                    "model": self._model,
+                    "input": [
+                        {"role": "system", "content": AGENT_SYSTEM_INSTRUCTIONS},
+                        {"role": "user", "content": decision_input},
+                    ],
+                    "tools": tool_schemas,
+                    "tool_choice": "auto",
+                    "parallel_tool_calls": False,
+                    "max_output_tokens": 200,
+                    "store": self._store_responses,
+                }
+                if self._timeout_seconds is not None:
+                    kwargs["timeout"] = self._timeout_seconds
+                try:
+                    response = self._client_provider().responses.create(**kwargs)
+                    return response
+                finally:
+                    if self._metrics is not None:
+                        self._metrics.record_model_call(
+                            max(0, round((perf_counter() - started) * 1_000)), response
+                        )
+
+            response = (
+                run_with_retry(
+                    request_provider,
+                    policy=self._retry_policy,
+                    sleeper=self._sleeper,
+                    on_retry=(self._metrics.record_retry if self._metrics is not None else None),
+                )
+                if self._retry_policy is not None
+                else request_provider()
             )
         except OpenAIClientNotConfiguredError:
             raise

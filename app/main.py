@@ -28,6 +28,7 @@ from app.core.exceptions import (
     FileTooLargeError,
     InvalidEmbeddingError,
     InvalidLLMResponseError,
+    InvalidReviewTransitionError,
     InvalidUploadMetadataError,
     KnowledgeDocumentNotFoundError,
     KnowledgeGraphDisabledError,
@@ -40,6 +41,8 @@ from app.core.exceptions import (
     OCRRequiredError,
     OpenAIClientNotConfiguredError,
     PersistenceError,
+    RevisionLimitReachedError,
+    RuntimeStateNotFoundError,
     TextDecodeError,
     UnsupportedFileTypeError,
 )
@@ -76,6 +79,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def handle_application_error(_: Request, exc: ApplicationError) -> JSONResponse:
         status_codes = {
             AssessmentNotFoundError: status.HTTP_404_NOT_FOUND,
+            RuntimeStateNotFoundError: status.HTTP_404_NOT_FOUND,
+            InvalidReviewTransitionError: status.HTTP_409_CONFLICT,
+            RevisionLimitReachedError: status.HTTP_409_CONFLICT,
             OpenAIClientNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
             LLMProviderError: status.HTTP_502_BAD_GATEWAY,
             InvalidLLMResponseError: status.HTTP_502_BAD_GATEWAY,

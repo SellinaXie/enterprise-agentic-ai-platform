@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 KNOWLEDGE_EMBEDDING_DIMENSION = 1536
@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = Field(default=30.0, gt=0)
-    openai_max_retries: int = Field(default=2, ge=0, le=10)
     openai_store_responses: bool = False
 
     rag_enabled: bool = False
@@ -66,8 +65,45 @@ class Settings(BaseSettings):
     multi_agent_max_failures: int = Field(default=2, ge=0, le=2)
     specialist_retry_limit: int = Field(default=1, ge=0, le=3)
 
+    runtime_risk_gate_enabled: bool = False
+    runtime_medium_risk_decision: Literal[
+        "auto_complete", "complete_with_warning", "require_human_review", "block_and_escalate"
+    ] = "complete_with_warning"
+    runtime_high_risk_decision: Literal[
+        "auto_complete", "complete_with_warning", "require_human_review", "block_and_escalate"
+    ] = "require_human_review"
+    runtime_critical_risk_decision: Literal[
+        "auto_complete", "complete_with_warning", "require_human_review", "block_and_escalate"
+    ] = "block_and_escalate"
+    runtime_review_on_insufficient_evidence: bool = True
+    runtime_review_on_degraded_execution: bool = True
+    runtime_review_on_specialist_unavailable: bool = True
+    runtime_review_on_tool_failure: bool = True
+    runtime_block_high_risk_invalid_provenance: bool = True
+    runtime_block_critical_missing_mitigation: bool = True
+    max_human_revisions: int = Field(default=2, ge=0, le=10)
+
+    provider_max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=10,
+        validation_alias=AliasChoices("PROVIDER_MAX_RETRIES", "OPENAI_MAX_RETRIES"),
+    )
+    provider_retry_base_delay_ms: int = Field(default=250, ge=0, le=60_000)
+    model_timeout_seconds: float = Field(default=30.0, gt=0)
+    embedding_timeout_seconds: float = Field(default=30.0, gt=0)
+    tool_timeout_seconds: float = Field(default=10.0, gt=0)
+    graph_extraction_timeout_seconds: float = Field(default=30.0, gt=0)
+    model_input_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+    model_output_cost_per_1m_tokens: float | None = Field(default=None, ge=0)
+
     evaluation_llm_judge_enabled: bool = False
     evaluation_judge_model: str = "gpt-4.1-mini"
+
+    @property
+    def openai_max_retries(self) -> int:
+        """Backward-compatible name for the centralized provider retry limit."""
+        return self.provider_max_retries
 
     @model_validator(mode="after")
     def validate_chunk_settings(self) -> Self:
