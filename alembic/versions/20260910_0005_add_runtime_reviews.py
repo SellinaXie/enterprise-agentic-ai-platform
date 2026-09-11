@@ -21,12 +21,12 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Add durable post-synthesis checkpoints and append-only review records."""
     op.drop_constraint(
-        "ck_assessments_assessment_status_values",
+        op.f("ck_assessments_assessment_status_values"),
         "assessments",
         type_="check",
     )
     op.create_check_constraint(
-        "ck_assessments_assessment_status_values",
+        op.f("ck_assessments_assessment_status_values"),
         "assessments",
         "status IN ('pending', 'processing', 'completed', 'failed', 'pending_review')",
     )
@@ -131,12 +131,12 @@ def downgrade() -> None:
     )
     op.drop_table("assessment_runtime_states")
     op.drop_constraint(
-        "ck_assessments_assessment_status_values",
+        op.f("ck_assessments_assessment_status_values"),
         "assessments",
         type_="check",
     )
     op.create_check_constraint(
-        "ck_assessments_assessment_status_values",
+        op.f("ck_assessments_assessment_status_values"),
         "assessments",
         "status IN ('pending', 'processing', 'completed', 'failed')",
     )

@@ -51,6 +51,9 @@ def test_initial_migration_renders_postgresql_schema(monkeypatch: MonkeyPatch) -
     assert "CREATE TABLE assessment_runtime_states" in sql
     assert "CREATE TABLE human_review_events" in sql
     assert "pending_review" in sql
+    assert "DROP CONSTRAINT ck_assessments_assessment_status_values" in sql
+    assert "ADD CONSTRAINT ck_assessments_assessment_status_values" in sql
+    assert "ck_assessments_ck_assessments_assessment_status_values" not in sql
 
 
 def test_v7c_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:
@@ -65,6 +68,9 @@ def test_v7c_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) ->
     sql = output.getvalue()
     assert "DROP TABLE human_review_events" in sql
     assert "DROP TABLE assessment_runtime_states" in sql
+    assert "DROP CONSTRAINT ck_assessments_assessment_status_values" in sql
+    assert "ADD CONSTRAINT ck_assessments_assessment_status_values" in sql
+    assert "ck_assessments_ck_assessments_assessment_status_values" not in sql
 
 
 def test_v6_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:

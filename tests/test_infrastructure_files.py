@@ -47,9 +47,11 @@ def test_ci_requires_real_postgres_regressions_and_container_smoke() -> None:
     assert "push:" in workflow
     assert "pull_request:" in workflow
     assert "pytest -m postgres" in workflow
+    assert "python scripts/postgres_probe.py" in workflow
     assert 'pytest -m "not postgres"' in workflow
     assert "python -m app.evaluation.runner --all" in workflow
     assert "python -m app.evaluation.assessment.runner --all" in workflow
     assert "docker build --target runtime" in workflow
     assert "docker compose up --build --detach postgres migrate api" in workflow
+    assert 'PROVIDER_REQUIRED: "false"' not in workflow.split("jobs:", maxsplit=1)[0]
     assert "continue-on-error" not in workflow
