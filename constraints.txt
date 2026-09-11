@@ -1,0 +1,19 @@
+# Direct dependency versions validated for the V8A Python 3.12 build.
+# Transitive dependencies remain governed by the compatible ranges in pyproject.toml.
+alembic==1.19.2
+build==1.6.1
+fastapi==0.141.1
+httpx==0.28.1
+langgraph==1.2.11
+openai==2.54.0
+pgvector==0.5.0
+psycopg==3.3.5
+psycopg-binary==3.3.5
+pydantic-settings==2.15.0
+pypdf==6.18.0
+pytest==9.1.1
+python-docx==1.2.0
+python-multipart==0.0.32
+ruff==0.16.6
+sqlalchemy==2.0.52
+uvicorn==0.52.4

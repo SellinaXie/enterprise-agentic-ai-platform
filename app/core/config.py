@@ -2,11 +2,13 @@
 
 from functools import lru_cache
 from typing import Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 KNOWLEDGE_EMBEDDING_DIMENSION = 1536
+UNSAFE_PLACEHOLDER_MARKERS = ("change-me", "changeme", "placeholder", "replace-with")
 
 
 class Settings(BaseSettings):
@@ -30,13 +32,21 @@ class Settings(BaseSettings):
         validation_alias="APP_LOG_LEVEL",
     )
     api_v1_prefix: str = "/api/v1"
+    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    cors_allow_credentials: bool = False
+    trusted_hosts: str = "localhost,127.0.0.1,testserver"
+    max_json_request_size_kb: int = Field(default=256, ge=1, le=10_240)
+    request_id_max_length: int = Field(default=64, ge=16, le=128)
+    log_exception_tracebacks: bool = False
 
     database_url: SecretStr | None = Field(default=None, validation_alias="DATABASE_URL")
+    database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
 
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: float = Field(default=30.0, gt=0)
     openai_store_responses: bool = False
+    provider_required: bool = True
 
     rag_enabled: bool = False
     openai_embedding_model: str = "text-embedding-3-small"
@@ -105,6 +115,23 @@ class Settings(BaseSettings):
         """Backward-compatible name for the centralized provider retry limit."""
         return self.provider_max_retries
 
+    @property
+    def parsed_cors_allowed_origins(self) -> list[str]:
+        """Return the explicit configured CORS allowlist."""
+        return [value.strip() for value in self.cors_allowed_origins.split(",") if value.strip()]
+
+    @property
+    def parsed_trusted_hosts(self) -> list[str]:
+        """Return the explicit ASGI trusted-host allowlist."""
+        return [value.strip() for value in self.trusted_hosts.split(",") if value.strip()]
+
+    @property
+    def provider_is_configured(self) -> bool:
+        """Report provider configuration without exposing the credential."""
+        return bool(
+            self.openai_api_key is not None and self.openai_api_key.get_secret_value().strip()
+        )
+
     @model_validator(mode="after")
     def validate_chunk_settings(self) -> Self:
         """Require overlap to be smaller than the deterministic chunk size."""
@@ -118,7 +145,61 @@ class Settings(BaseSettings):
                 "LANGGRAPH_RECURSION_LIMIT must be at least 2 * AGENT_MAX_STEPS + 3 "
                 "when AGENTIC_WORKFLOW_ENABLED is true"
             )
+        if (self.model_input_cost_per_1m_tokens is None) != (
+            self.model_output_cost_per_1m_tokens is None
+        ):
+            raise ValueError(
+                "MODEL_INPUT_COST_PER_1M_TOKENS and MODEL_OUTPUT_COST_PER_1M_TOKENS "
+                "must be configured together"
+            )
+
+        for origin in self.parsed_cors_allowed_origins:
+            parsed = urlsplit(origin)
+            if origin == "*":
+                continue
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("CORS_ALLOWED_ORIGINS must contain valid HTTP(S) origins")
+
+        if self.environment == "production":
+            self._validate_production_settings()
         return self
+
+    def _validate_production_settings(self) -> None:
+        """Reject silent development fallbacks at the production boundary."""
+        if self.debug:
+            raise ValueError("APP_DEBUG must be false in production")
+        if self.log_exception_tracebacks:
+            raise ValueError("LOG_EXCEPTION_TRACEBACKS must be false in production")
+        if "*" in self.parsed_cors_allowed_origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS cannot contain '*' in production")
+        if self.cors_allow_credentials and not self.parsed_cors_allowed_origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS must be explicit when credentials are allowed")
+        if not self.parsed_trusted_hosts or "*" in self.parsed_trusted_hosts:
+            raise ValueError("TRUSTED_HOSTS must be an explicit allowlist in production")
+
+        if self.database_url is None:
+            raise ValueError("DATABASE_URL is required in production")
+        database_url = self.database_url.get_secret_value().strip()
+        if not database_url.startswith(("postgresql://", "postgresql+psycopg://")):
+            raise ValueError("DATABASE_URL must use PostgreSQL in production")
+        if any(marker in database_url.casefold() for marker in UNSAFE_PLACEHOLDER_MARKERS):
+            raise ValueError("DATABASE_URL contains an unsafe placeholder in production")
+
+        provider_needed = self.provider_required or any(
+            (
+                self.rag_enabled,
+                self.agentic_workflow_enabled,
+                self.multi_agent_workflow_enabled,
+                self.knowledge_graph_enabled,
+                self.evaluation_llm_judge_enabled,
+            )
+        )
+        if provider_needed and not self.provider_is_configured:
+            raise ValueError("OPENAI_API_KEY is required by the enabled production profile")
+        if self.provider_is_configured:
+            api_key = self.openai_api_key.get_secret_value().casefold()  # type: ignore[union-attr]
+            if any(marker in api_key for marker in UNSAFE_PLACEHOLDER_MARKERS):
+                raise ValueError("OPENAI_API_KEY contains an unsafe placeholder in production")
 
 
 @lru_cache

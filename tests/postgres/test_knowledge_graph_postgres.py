@@ -3,6 +3,7 @@
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import Engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.knowledge import EmbeddedChunk, KnowledgeSourceType, RetrievalSource
@@ -16,6 +17,7 @@ pytestmark = pytest.mark.postgres
 
 def test_postgres_graph_uuid_jsonb_provenance_and_traversal_round_trip(
     postgres_session_factory: sessionmaker[Session],
+    postgres_engine: Engine,
 ) -> None:
     with postgres_session_factory() as session:
         document_id = uuid4()
@@ -93,3 +95,20 @@ def test_postgres_graph_uuid_jsonb_provenance_and_traversal_round_trip(
         assert traversal.evidence[0].chunk_id == chunk.chunk_id
         assert traversal.evidence[0].retrieval_source == RetrievalSource.GRAPH
         assert traversal.evidence[0].similarity_score is None
+
+    schema = inspect(postgres_engine)
+    entity_constraints = {
+        item["name"] for item in schema.get_unique_constraints("knowledge_entities")
+    }
+    relationship_constraints = {
+        item["name"] for item in schema.get_unique_constraints("knowledge_relationships")
+    }
+    relationship_foreign_keys = {
+        tuple(item["constrained_columns"])
+        for item in schema.get_foreign_keys("knowledge_relationships")
+    }
+    assert "uq_knowledge_entities_type_normalized_name" in entity_constraints
+    assert "uq_knowledge_relationships_source_target_type_chunk" in relationship_constraints
+    assert {("source_entity_id",), ("target_entity_id",), ("source_chunk_id",)} <= (
+        relationship_foreign_keys
+    )

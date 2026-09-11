@@ -62,6 +62,7 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
     knowledge_columns = {
         column["name"]: column for column in schema.get_columns("knowledge_chunks")
     }
+    knowledge_indexes = {index["name"] for index in schema.get_indexes("knowledge_chunks")}
     with postgres_engine.connect() as connection:
         vector_version = connection.execute(
             text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
@@ -85,6 +86,35 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
     assert columns["completed_at"]["type"].timezone is True
     assert isinstance(knowledge_columns["embedding"]["type"], VECTOR)
     assert knowledge_columns["embedding"]["type"].dim == 1536
+    assert "ix_knowledge_chunks_embedding_hnsw" in knowledge_indexes
+
+
+def test_readiness_passes_against_migrated_postgres(
+    postgres_database_url: str,
+    postgres_engine: Engine,
+) -> None:
+    """Readiness verifies connectivity and the complete migration head without provider I/O."""
+    del postgres_engine
+    application = create_app(
+        Settings(
+            _env_file=None,
+            APP_ENV="test",
+            APP_LOG_LEVEL="ERROR",
+            DATABASE_URL=postgres_database_url,
+            OPENAI_API_KEY=None,
+            PROVIDER_REQUIRED=False,
+        )
+    )
+
+    with TestClient(application) as client:
+        response = client.get("/readiness")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "checks": {"database": "ready", "schema": "ready", "configuration": "ready"},
+    }
+    assert postgres_database_url not in response.text
 
 
 def test_pgvector_knowledge_ingestion_and_similarity_search(

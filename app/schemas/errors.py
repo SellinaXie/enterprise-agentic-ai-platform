@@ -14,3 +14,4 @@ class ErrorResponse(BaseModel):
     """Envelope for controlled application errors."""
 
     error: ErrorDetail
+    request_id: str | None = None

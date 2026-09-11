@@ -193,6 +193,7 @@ class MultiAgentTraceEvent(SpecialistModel):
 class MultiAgentExecutionMetadata(SpecialistModel):
     """Safe V5 execution summary stored in the existing JSONB column."""
 
+    request_id: str | None = Field(default=None, max_length=128)
     execution_mode: Literal["multi_agent"] = "multi_agent"
     agents: list[MultiAgentName] = Field(
         default_factory=lambda: [

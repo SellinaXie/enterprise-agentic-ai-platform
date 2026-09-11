@@ -250,4 +250,5 @@ def test_multi_agent_api_post_get_round_trip_uses_mocked_workflow(
     with session_factory() as session:
         persisted = AssessmentRepository(session).get_by_id(created.assessment_id)
     assert persisted is not None
-    assert persisted.execution_metadata == _multi_execution().model_dump(mode="json")
+    assert persisted.execution_metadata == created.execution.model_dump(mode="json")
+    assert created.execution.request_id == created_response.headers["x-request-id"]

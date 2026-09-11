@@ -46,3 +46,6 @@ outputs/
 
 # Local runtime output
 *.log
+*.db
+*.sqlite
+*.sqlite3

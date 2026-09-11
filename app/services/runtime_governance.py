@@ -17,6 +17,7 @@ from app.agents.multi_agent_models import (
     MultiAgentStatus,
     MultiAgentTraceEventType,
 )
+from app.core.context import get_request_id
 from app.core.exceptions import (
     AssessmentNotFoundError,
     InvalidReviewTransitionError,
@@ -143,6 +144,7 @@ class RuntimeGovernanceService:
             token_usage=self._metrics.token_usage if self._metrics is not None else None,
             input_cost_per_million=self._input_cost_per_million,
             output_cost_per_million=self._output_cost_per_million,
+            request_id=get_request_id(),
             now=self._clock(),
         )
         if self._metrics is not None:
@@ -381,6 +383,7 @@ class RuntimeGovernanceService:
                     *state.telemetry.events,
                     RuntimeTraceEvent(
                         timestamp=resumed_at,
+                        request_id=new_state.telemetry.request_id,
                         event_type=RuntimeTraceEventType.HUMAN_REVIEW_RESUMED,
                         component="human_review",
                         status="revision_submitted",
@@ -571,6 +574,7 @@ class RuntimeGovernanceService:
                     *telemetry.events,
                     RuntimeTraceEvent(
                         timestamp=self._clock(),
+                        request_id=telemetry.request_id,
                         event_type=event_type,
                         component=component,
                         status=status,

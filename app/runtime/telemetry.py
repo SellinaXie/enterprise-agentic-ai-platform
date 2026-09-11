@@ -29,6 +29,7 @@ def build_operational_telemetry(
     model_call_count: int | None = None,
     input_cost_per_million: float | None = None,
     output_cost_per_million: float | None = None,
+    request_id: str | None = None,
     now: datetime | None = None,
 ) -> OperationalTelemetry:
     """Summarize only counters and safe structured execution metadata."""
@@ -82,6 +83,7 @@ def build_operational_telemetry(
         output_cost_per_million=output_cost_per_million,
     )
     return OperationalTelemetry(
+        request_id=request_id,
         execution_mode=mode,
         execution_health=health,
         total_duration_ms=duration_ms,
@@ -102,12 +104,14 @@ def build_operational_telemetry(
         events=[
             RuntimeTraceEvent(
                 timestamp=timestamp - timedelta(milliseconds=duration_ms),
+                request_id=request_id,
                 event_type=RuntimeTraceEventType.ASSESSMENT_STARTED,
                 component="assessment",
                 status="started",
             ),
             RuntimeTraceEvent(
                 timestamp=timestamp,
+                request_id=request_id,
                 event_type=RuntimeTraceEventType.QUALITY_GATE_EVALUATED,
                 component="runtime_risk_gate",
                 status=gate_decision.value,

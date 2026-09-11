@@ -86,6 +86,7 @@ class AssessmentExecutionMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    request_id: str | None = Field(default=None, max_length=128)
     execution_mode: Literal["single_agent", "agentic"] = "single_agent"
     steps_used: int = Field(ge=0)
     tools_used: list[str]
@@ -99,5 +100,6 @@ class DeterministicExecutionMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    request_id: str | None = Field(default=None, max_length=128)
     execution_mode: Literal["deterministic"] = "deterministic"
     graph_retrieval: GraphRetrievalExecutionMetadata | None = None

@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  APP_ENV: test
+  PROVIDER_REQUIRED: "false"
+  EVALUATION_LLM_JUDGE_ENABLED: "false"
+
+jobs:
+  quality-and-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install project and development dependencies
+        run: python -m pip install -c constraints.txt -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Formatting
+        run: ruff format --check .
+      - name: Compile
+        run: python -m compileall -q app tests scripts
+      - name: Dependency integrity
+        run: python -m pip check
+      - name: Network-free unit, workflow, and evaluation tests
+        run: pytest -m "not postgres"
+      - name: V7A deterministic retrieval regression
+        run: python -m app.evaluation.runner --all --output-dir /tmp/v7a-evaluation
+      - name: V7B deterministic quality regression
+        run: python -m app.evaluation.assessment.runner --all --output-dir /tmp/v7b-evaluation
+      - name: OpenAPI regression
+        run: python -c "from app.main import create_app; paths=create_app().openapi()['paths']; assert len(paths) >= 14 and '/readiness' in paths"
+      - name: Alembic history
+        run: alembic history
+      - name: Secret scan
+        run: python scripts/secret_scan.py
+      - name: Package build
+        run: python -m build
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg16-bookworm
+        env:
+          POSTGRES_USER: enterprise_ai
+          POSTGRES_PASSWORD: ci-integration-only
+          POSTGRES_DB: enterprise_ai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U enterprise_ai -d enterprise_ai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      TEST_DATABASE_URL: postgresql+psycopg://enterprise_ai:ci-integration-only@localhost:5432/enterprise_ai_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install project and development dependencies
+        run: python -m pip install -c constraints.txt -e ".[dev]"
+      - name: PostgreSQL and pgvector versions
+        run: |
+          psql "$TEST_DATABASE_URL" -c "SELECT version();"
+          psql "$TEST_DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          psql "$TEST_DATABASE_URL" -c "SELECT extversion FROM pg_extension WHERE extname = 'vector';"
+      - name: Real PostgreSQL integration suite
+        run: pytest -m postgres
+
+  container-smoke:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_PASSWORD: ci-compose-only
+      PROVIDER_REQUIRED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Build production image
+        run: docker build --target runtime --tag enterprise-ai-api:ci .
+      - name: Start production-like stack
+        run: docker compose up --build --detach postgres migrate api
+      - name: Health and readiness smoke
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/readiness >/tmp/readiness.json; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              docker compose logs
+              exit 1
+            fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:8000/health
+          python -c "import json; payload=json.load(open('/tmp/readiness.json')); assert payload['status'] == 'ready'"
+      - name: Readiness fails safely without its database
+        run: |
+          docker compose stop postgres
+          for attempt in $(seq 1 15); do
+            status=$(curl --silent --output /tmp/not-ready.json --write-out '%{http_code}' http://127.0.0.1:8000/readiness || true)
+            if [ "$status" = "503" ]; then
+              break
+            fi
+            sleep 1
+          done
+          test "$status" = "503"
+          python -c "import json; payload=json.load(open('/tmp/not-ready.json')); assert payload['status'] == 'not_ready'"
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Tear down containers and volumes
+        if: always()
+        run: docker compose down --volumes --remove-orphans

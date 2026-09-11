@@ -55,6 +55,16 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.graph_extraction_timeout_seconds == 30
     assert settings.model_input_cost_per_1m_tokens is None
     assert settings.model_output_cost_per_1m_tokens is None
+    assert settings.provider_required is True
+    assert settings.parsed_cors_allowed_origins == [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    assert settings.parsed_trusted_hosts == ["localhost", "127.0.0.1", "testserver"]
+    assert settings.max_json_request_size_kb == 256
+    assert settings.request_id_max_length == 64
+    assert settings.log_exception_tracebacks is False
+    assert settings.database_connect_timeout_seconds == 5
 
 
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:

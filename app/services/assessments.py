@@ -10,6 +10,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.agents.models import AssessmentExecutionMetadata, DeterministicExecutionMetadata
 from app.agents.multi_agent_models import MultiAgentExecutionMetadata
+from app.core.context import get_request_id
 from app.core.exceptions import (
     ApplicationError,
     AssessmentGenerationError,
@@ -236,6 +237,9 @@ class AssessmentService:
                 result = self._generator.generate(prompt)
             provenance_valid = self._provenance_is_valid(result, evidence)
             result = self._apply_grounding_metadata(result, evidence)
+            request_id = get_request_id()
+            if request_id is not None:
+                execution = execution.model_copy(update={"request_id": request_id})
         except ApplicationError as exc:
             self._persist_failure(
                 assessment_id,

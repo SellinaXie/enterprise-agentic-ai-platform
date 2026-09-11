@@ -1,12 +1,15 @@
 """Typed request and response contracts for the V3 knowledge layer."""
 
+import json
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.knowledge import KnowledgeSourceType
+
+MAX_METADATA_BYTES = 100_000
 
 
 class KnowledgeDocumentCreate(BaseModel):
@@ -20,6 +23,18 @@ class KnowledgeDocumentCreate(BaseModel):
     external_id: str | None = Field(default=None, max_length=300)
     content: str = Field(min_length=1, max_length=1_000_000)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata_size(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Reject unbounded or non-JSON metadata before persistence."""
+        try:
+            encoded = json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode()
+        except (TypeError, ValueError) as exc:
+            raise ValueError("metadata must contain JSON-compatible values") from exc
+        if len(encoded) > MAX_METADATA_BYTES:
+            raise ValueError("metadata exceeds the 100,000-byte limit")
+        return value
 
 
 class KnowledgeDocumentResponse(BaseModel):

@@ -1,0 +1,83 @@
+name: enterprise-agentic-ai-platform
+
+x-database-environment: &database-environment
+  POSTGRES_USER: ${POSTGRES_USER:-enterprise_ai}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-development-only}
+  POSTGRES_DB: ${POSTGRES_DB:-enterprise_ai}
+  POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-enterprise_ai_test}
+
+x-application-environment: &application-environment
+  APP_ENV: ${APP_ENV:-development}
+  APP_DEBUG: ${APP_DEBUG:-false}
+  APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-enterprise_ai}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-enterprise_ai}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  PROVIDER_REQUIRED: ${PROVIDER_REQUIRED:-false}
+  RAG_ENABLED: ${RAG_ENABLED:-false}
+  KNOWLEDGE_GRAPH_ENABLED: ${KNOWLEDGE_GRAPH_ENABLED:-false}
+  AGENTIC_WORKFLOW_ENABLED: ${AGENTIC_WORKFLOW_ENABLED:-false}
+  MULTI_AGENT_WORKFLOW_ENABLED: ${MULTI_AGENT_WORKFLOW_ENABLED:-false}
+  RUNTIME_RISK_GATE_ENABLED: ${RUNTIME_RISK_GATE_ENABLED:-false}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+  TRUSTED_HOSTS: ${TRUSTED_HOSTS:-localhost,127.0.0.1,testserver}
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg16-bookworm
+    environment: *database-environment
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/10-create-test-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      target: runtime
+    command: ["alembic", "upgrade", "head"]
+    environment: *application-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: runtime
+    environment: *application-environment
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  integration-tests:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    environment:
+      <<: *application-environment
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-enterprise_ai}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-enterprise_ai}
+      TEST_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-enterprise_ai}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_TEST_DB:-enterprise_ai_test}
+      PROVIDER_REQUIRED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  postgres_data:

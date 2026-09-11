@@ -44,6 +44,13 @@ def get_openai_client(settings: Settings | None = None) -> OpenAI:
     return _get_default_openai_client()
 
 
+def close_openai_client() -> None:
+    """Close the process-level provider client only if it was created lazily."""
+    if _get_default_openai_client.cache_info().currsize:
+        _get_default_openai_client().close()
+    _get_default_openai_client.cache_clear()
+
+
 class OpenAIAssessmentGenerator:
     """Generate and validate one structured assessment with the Responses API."""
 

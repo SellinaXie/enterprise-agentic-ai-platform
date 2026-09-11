@@ -1,11 +1,122 @@
 # Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V7C backend for grounded enterprise AI architecture assessments. V7C preserves
-the complete V1-V7B implementation and adds runtime reliability, deterministic risk controls,
-durable human review, and privacy-safe operational telemetry around the existing deterministic,
-single-agent, and multi-agent modes. Architecture remains the broad purpose of the platform;
-enterprise risk, controls, and governance are first-class dimensions rather than a replacement
-compliance-checking product.
+Production-minded V8A backend for grounded enterprise AI architecture assessments. V8A preserves
+the complete V1-V7C implementation and adds reproducible containerization, real
+PostgreSQL/pgvector integration, CI, deployment health boundaries, configuration hardening,
+request correlation, and production-safe logging/error handling. Architecture remains the broad
+purpose of the platform; enterprise risk, controls, and governance are first-class dimensions
+rather than a replacement compliance-checking product.
+
+## V8A Production Foundation
+
+V8A is the infrastructure/application production foundation, not the completion of V8. It adds a
+non-root Python 3.12.12 API image, PostgreSQL 16 with pgvector 0.8.6, an explicit migration service, a
+separate test database, GitHub Actions integration validation, readiness checks, production
+profile validation, bounded request IDs, explicit CORS/trusted hosts, JSON logging, sanitized
+errors, and graceful resource disposal. It does not change the V3–V7C AI execution architecture.
+
+### Container quickstart
+
+Docker Engine with the Compose plugin is the only local infrastructure prerequisite; PostgreSQL
+does not need to be installed on the host.
+
+```bash
+cp .env.example .env
+# Replace the local placeholder password. Add a real provider key only if exercising AI routes.
+docker compose up --build --detach
+docker compose ps
+curl http://localhost:8000/health
+curl http://localhost:8000/readiness
+```
+
+Compose starts:
+
+- `postgres`: persistent PostgreSQL/pgvector application database plus a separately initialized
+  `enterprise_ai_test` database.
+- `migrate`: one explicit forward-only `alembic upgrade head` job.
+- `api`: the non-root production image after PostgreSQL is healthy and migration succeeds.
+- `integration-tests`: an opt-in `test` profile built with test-only dependencies.
+
+Normal API startup never performs a hidden downgrade or destructive reset. For production,
+execute the migration image as a release job before shifting traffic; coordinate backups and
+rollback plans separately. V8A does not implement backup/restore or disaster-recovery automation.
+
+Run the real PostgreSQL suite against the disposable Compose test database:
+
+```bash
+docker compose --profile test run --rm integration-tests
+```
+
+The test guard requires `TEST_DATABASE_URL` to use PostgreSQL, contain `test` in its database
+name, differ from `DATABASE_URL`, and not resemble a production database. The suite validates the
+empty-to-head migration chain, a `0005 → 0004 → 0005` round trip, native UUID/JSONB/TIMESTAMPTZ,
+pgvector `vector(1536)` and HNSW behavior, assessment persistence, graph foreign keys/uniqueness
+and bounded traversal, V7C checkpoints, approval, revision history, and restart/session
+boundaries.
+
+For local network-free development without Docker:
+
+```bash
+pytest -m "not postgres"
+ruff check .
+ruff format --check .
+```
+
+To stop the stack while preserving the application database, run `docker compose down`. Add
+`--volumes` only when intentionally deleting local Compose database data.
+
+### Liveness and readiness
+
+- `GET /health` is process liveness only. It does not query PostgreSQL or OpenAI.
+- `GET /readiness` checks critical configuration, database connectivity, Alembic head
+  `20260910_0005`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
+  when any check fails. It never calls OpenAI or exposes a DSN, credential, SQL error, or traceback.
+
+### Configuration and HTTP boundary
+
+`APP_ENV` supports `development`, `test`, `staging`, and `production` (with `local` retained for
+compatibility). Production rejects debug/traceback logging, missing or non-PostgreSQL
+`DATABASE_URL`, obvious placeholder credentials, wildcard CORS/trusted hosts, incomplete pricing,
+and a missing provider key when the provider is required by enabled features. Development and
+test retain safe opt-in defaults. `PROVIDER_REQUIRED=false` is intended only for infrastructure
+or deterministic test processes that make no provider calls.
+
+`X-Request-ID` accepts only a bounded alphanumeric/`.`/`_`/`-` value; otherwise a UUID is
+generated. The ID is returned as a response header, added to request logs, and persisted in safe
+assessment execution/runtime telemetry. Existing error bodies remain compatible when no incoming
+ID is supplied; when a valid ID is supplied it is also returned in the structured error body.
+Unexpected errors return only a stable code, safe message, and correlation ID. JSON request
+`Content-Length`, domain strings, reviewer comments, upload bytes, and metadata are bounded;
+deployment proxies must additionally enforce streaming/chunked request limits.
+
+For direct development, use `uvicorn app.main:app --reload`. The image runs
+`uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`; request logging is handled by
+the application's structured middleware. A production reverse proxy must validate/replace
+forwarded headers, send an allowed `Host`, enforce body/time limits, and configure Uvicorn's
+trusted forwarded IPs for that specific network rather than trusting arbitrary clients. Shutdown
+closes the lazy provider client and disposes SQLAlchemy pools; request-scoped sessions and upload
+handles retain their existing explicit cleanup boundaries.
+
+JSON logs include timestamp, level, event, request ID, assessment ID where available, status, and
+duration. Sensitive field names, prompts, private reasoning, embeddings, full documents,
+authorization data, provider messages, secrets, and production tracebacks are excluded. Secrets
+must be injected through environment variables or the deployment platform and must never be baked
+into the image. `pyproject.toml` declares supported direct-dependency ranges; `constraints.txt`
+pins the direct versions validated by V8A for repeatable container and CI installation without
+claiming a fully locked transitive supply chain.
+
+### CI boundary
+
+`.github/workflows/ci.yml` runs on every push and pull request. It fails on lint, formatting,
+compile, dependency, unit/workflow/evaluation regression, migration, PostgreSQL/pgvector, OpenAPI,
+secret-scan, package-build, image-build, or Compose-smoke failures. PostgreSQL tests run against a
+real pgvector service in CI; V7A/V7B remain deterministic and the optional LLM judge is disabled.
+No live provider call is required.
+
+V8A is a production-minded reference implementation, not certification for regulated production
+use and not a substitute for organizational security/compliance controls. Authentication,
+RBAC/ABAC, SSO, authenticated reviewer identity, provider portability, tenant isolation, frontend,
+cloud deployment, managed secrets, backup automation, and external observability remain deferred.
 
 ## Runtime Reliability & Risk Controls
 
@@ -85,9 +196,9 @@ GRAPH_EXTRACTION_TIMEOUT_SECONDS=30
 
 V7C human review is a workflow control, not a security boundary. It does not provide authenticated
 reviewer identity, enterprise RBAC/ABAC, SSO, tenant isolation, or cryptographic approval
-assurance. Production identity and authorization belong to V8. This version also adds no
-frontend, Docker/deployment/CI layer, external monitoring SaaS, LangSmith requirement, MCP
-connector, or enterprise secrets infrastructure.
+assurance. V8A adds the production foundation described above but not identity, authorization,
+frontend, hosted deployment, external monitoring SaaS, LangSmith, MCP, or enterprise secrets
+infrastructure.
 
 ## V7B architecture and risk/governance quality evaluation
 
@@ -279,7 +390,7 @@ retrieval comparison, negative-query measurement, and provenance validation.
 
 Implemented in V7B: final assessment architecture/risk/governance evaluation and optional
 model-based judging. Implemented in V7C: internal operational telemetry, bounded resilience,
-central runtime gating, and durable human review. Productionization remains planned for V8.
+central runtime gating, and durable human review. V8A now provides the production foundation.
 
 ## V6.5 enterprise document ingestion
 
@@ -330,8 +441,8 @@ extraction; vector RAG; GraphRAG; and the existing multi-agent workflows.
 
 Current limitation: image-only and scanned PDFs require OCR and are not supported by V6.5.
 
-Planned: observability and reliability controls in V7C, productionization in V8, and MCP or
-external enterprise integrations only where later evidence justifies them.
+Implemented later: V7C reliability controls and the V8A production foundation. MCP or external
+enterprise integrations remain deferred unless later evidence justifies them.
 
 ## V6 capability
 
@@ -971,11 +1082,11 @@ assurance.
 V7B adds no LangSmith, OpenTelemetry platform, vendor dashboard, persistent tracing, full
 latency/token/cost analytics, SLO/SLA, retry framework, timeout framework, LangGraph interrupt or
 resume, human-review queue, approval workflow, escalation engine, or runtime quality-gate
-enforcement. These reliability and observability capabilities remain deferred to V7C or V8. MCP
+enforcement. V7C and V8A now provide internal reliability, observability, and infrastructure. MCP
 remains deferred until a concrete interoperability use case exists.
 
 The V6.5 ingestion limitations remain: scanned/image-only PDFs need OCR; file ingestion is
 synchronous and memory-bounded; and legacy Word, spreadsheets, presentations, image understanding,
 archive ingestion, web crawling, and external enterprise connectors are not implemented.
 Production infrastructure—including Docker, CI/CD, authentication, authorization, malware
-scanning, object storage, queues, deployment, and frontend UI—remains deferred to V8.
+scanning, object storage, queues, hosted deployment, and frontend UI—remains deferred beyond V8A.

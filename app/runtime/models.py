@@ -121,6 +121,7 @@ class RuntimeTraceEvent(RuntimeModel):
     """One compact audit event with only operational metadata."""
 
     timestamp: datetime
+    request_id: str | None = Field(default=None, max_length=128)
     event_type: RuntimeTraceEventType
     component: str = Field(min_length=1, max_length=100)
     status: str = Field(min_length=1, max_length=50)
@@ -139,6 +140,7 @@ class ProviderTokenUsage(RuntimeModel):
 class OperationalTelemetry(RuntimeModel):
     """Structured per-assessment telemetry without sensitive payloads."""
 
+    request_id: str | None = Field(default=None, max_length=128)
     execution_mode: str = Field(min_length=1, max_length=30)
     execution_health: ExecutionHealth
     total_duration_ms: int = Field(ge=0)

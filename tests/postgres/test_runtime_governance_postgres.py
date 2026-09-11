@@ -69,3 +69,84 @@ def test_postgres_checkpoint_jsonb_timestamptz_and_review_resume(
         HumanReviewAction.REQUESTED,
         HumanReviewAction.APPROVED,
     ]
+
+
+def test_postgres_revision_history_survives_session_boundaries(
+    postgres_session_factory: sessionmaker[Session],
+    synthetic_assessment_request: AssessmentRequest,
+    synthetic_assessment_result: AssessmentResult,
+) -> None:
+    """Persist revision count, bounded feedback, resumption, and append-only history."""
+    with postgres_session_factory() as session:
+        assessments = AssessmentRepository(session)
+        assessment_id = assessments.create(
+            assessment_id=uuid4(),
+            company_name=synthetic_assessment_request.company_name,
+            industry=synthetic_assessment_request.industry,
+            business_problem=synthetic_assessment_request.business_problem,
+            request_payload=synthetic_assessment_request.model_dump(mode="json"),
+        ).assessment_id
+        assessments.mark_processing(assessment_id)
+        RuntimeGovernanceService(
+            assessments=assessments,
+            reviews=RuntimeReviewRepository(session),
+            gate=RuntimeRiskGate(RuntimeRiskPolicy()),
+        ).process_candidate(
+            assessment_id=assessment_id,
+            result=synthetic_assessment_result,
+            evidence=(),
+            execution=DeterministicExecutionMetadata(),
+            duration_ms=4,
+        )
+        assessments.commit()
+
+    with postgres_session_factory() as session:
+        RuntimeGovernanceService(
+            assessments=AssessmentRepository(session),
+            reviews=RuntimeReviewRepository(session),
+            gate=RuntimeRiskGate(RuntimeRiskPolicy()),
+        ).request_revision(
+            assessment_id,
+            HumanReviewRequest(
+                reviewer_id="postgres-reviewer",
+                comment="Clarify the synthetic mitigation before approval.",
+            ),
+        )
+
+    with postgres_session_factory() as session:
+        service = RuntimeGovernanceService(
+            assessments=AssessmentRepository(session),
+            reviews=RuntimeReviewRepository(session),
+            gate=RuntimeRiskGate(RuntimeRiskPolicy()),
+        )
+        feedback = service.get_revision_feedback(assessment_id)
+        resumed = service.resume_revision(
+            assessment_id=assessment_id,
+            result=synthetic_assessment_result,
+            evidence=(),
+            execution=DeterministicExecutionMetadata(),
+            duration_ms=3,
+        )
+        assert feedback.comment == "Clarify the synthetic mitigation before approval."
+        assert resumed.status == AssessmentStatus.PENDING_REVIEW
+
+    with postgres_session_factory() as session:
+        service = RuntimeGovernanceService(
+            assessments=AssessmentRepository(session),
+            reviews=RuntimeReviewRepository(session),
+            gate=RuntimeRiskGate(RuntimeRiskPolicy()),
+        )
+        service.approve(
+            assessment_id,
+            HumanReviewRequest(reviewer_id="postgres-reviewer"),
+        )
+        state = RuntimeReviewRepository(session).get_state(assessment_id)
+        history = RuntimeReviewRepository(session).list_review_events(assessment_id)
+
+    assert state is not None and state.revision_count == 1
+    assert [event.action for event in history] == [
+        HumanReviewAction.REQUESTED,
+        HumanReviewAction.REVISION_REQUESTED,
+        HumanReviewAction.REVISION_SUBMITTED,
+        HumanReviewAction.APPROVED,
+    ]
