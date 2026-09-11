@@ -12,7 +12,7 @@ from app.db.session import get_database_url, get_engine
 from app.schemas.health import HealthResponse, ReadinessChecks, ReadinessResponse
 
 router = APIRouter(tags=["health"])
-ALEMBIC_HEAD_REVISION = "20260910_0005"
+ALEMBIC_HEAD_REVISION = "20260911_0006"
 REQUIRED_TABLES = frozenset(
     {
         "assessments",

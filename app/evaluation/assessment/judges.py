@@ -2,21 +2,17 @@
 
 import json
 from collections.abc import Callable
-from typing import Protocol, cast
+from typing import Any, Protocol
 
-from openai import OpenAI, OpenAIError
-
-from app.core.exceptions import (
-    InvalidLLMResponseError,
-    LLMProviderError,
-    OpenAIClientNotConfiguredError,
-)
 from app.evaluation.assessment.models import (
     AssessmentEvaluationCase,
     AssessmentEvaluationOutput,
     JudgeUsage,
     LLMJudgeResult,
 )
+from app.providers.contracts import StructuredModelProvider
+from app.providers.openai import OpenAIStructuredModelProvider
+from app.runtime.metrics import RuntimeMetricsRecorder
 from app.services.llm import get_openai_client
 
 JUDGE_SYSTEM_INSTRUCTIONS = """You are an evaluator for synthetic enterprise AI assessments.
@@ -72,11 +68,15 @@ class OpenAIAssessmentJudge:
         *,
         model: str,
         store_responses: bool = False,
-        client_provider: Callable[[], OpenAI] = get_openai_client,
+        client_provider: Callable[[], Any] = get_openai_client,
     ) -> None:
-        self._model = model
-        self._store_responses = store_responses
-        self._client_provider = client_provider
+        self._metrics = RuntimeMetricsRecorder()
+        self._provider: StructuredModelProvider = OpenAIStructuredModelProvider(
+            model=model,
+            store_responses=store_responses,
+            client_provider=client_provider,
+            metrics=self._metrics,
+        )
 
     def judge(
         self,
@@ -84,36 +84,19 @@ class OpenAIAssessmentJudge:
         output: AssessmentEvaluationOutput,
     ) -> LLMJudgeResult:
         """Request one strict result and attach only SDK-reported token counts."""
-        try:
-            response = self._client_provider().responses.parse(
-                model=self._model,
-                input=[
-                    {"role": "system", "content": JUDGE_SYSTEM_INSTRUCTIONS},
-                    {"role": "user", "content": build_judge_user_input(case, output)},
-                ],
-                text_format=LLMJudgeResult,
-                store=self._store_responses,
-            )
-        except OpenAIClientNotConfiguredError:
-            raise
-        except OpenAIError as exc:
-            raise LLMProviderError from exc
-        except (TypeError, ValueError) as exc:
-            raise InvalidLLMResponseError from exc
-        if response.output_parsed is None:
-            raise InvalidLLMResponseError
-        try:
-            result = LLMJudgeResult.model_validate(response.output_parsed)
-        except (TypeError, ValueError) as exc:
-            raise InvalidLLMResponseError from exc
-        usage = getattr(response, "usage", None)
+        result = self._provider.generate_structured(
+            system=JUDGE_SYSTEM_INSTRUCTIONS,
+            user=build_judge_user_input(case, output),
+            output_model=LLMJudgeResult,
+        )
+        usage = self._metrics.token_usage
         if usage is None:
             return result.model_copy(update={"usage": None})
         return result.model_copy(
             update={
                 "usage": JudgeUsage(
-                    input_tokens=cast(int | None, getattr(usage, "input_tokens", None)),
-                    output_tokens=cast(int | None, getattr(usage, "output_tokens", None)),
+                    input_tokens=usage.input_tokens,
+                    output_tokens=usage.output_tokens,
                 )
             }
         )

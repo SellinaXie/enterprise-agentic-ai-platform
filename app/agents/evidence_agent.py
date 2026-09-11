@@ -1,12 +1,9 @@
 """Bounded, tool-capable Evidence Agent for the V5 workflow."""
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from time import perf_counter, sleep
+from time import sleep
 from typing import Any, Protocol
-
-from openai import OpenAI, OpenAIError
 
 from app.agents.evidence_prompt import (
     EVIDENCE_AGENT_SYSTEM_INSTRUCTIONS,
@@ -16,18 +13,15 @@ from app.agents.evidence_prompt import (
 )
 from app.agents.models import AgentTerminationReason
 from app.agents.multi_agent_models import EvidenceBrief, EvidenceItem, MultiAgentName
-from app.agents.structured_output import OpenAIStructuredOutput
-from app.core.exceptions import (
-    InvalidLLMResponseError,
-    LLMProviderError,
-    OpenAIClientNotConfiguredError,
-)
+from app.agents.structured_output import StructuredOutput
 from app.models.knowledge import RetrievedEvidence
 from app.models.knowledge_graph import GraphNeighborhood, GraphRetrievalExecutionMetadata
+from app.providers.contracts import StructuredModelProvider
+from app.providers.openai import OpenAIStructuredModelProvider
 from app.runtime.metrics import RuntimeMetricsRecorder
 from app.runtime.models import RetryPolicy
-from app.runtime.resilience import run_with_retry
 from app.schemas.assessment import AssessmentRequest
+from app.services.llm import get_openai_client
 from app.tools.models import ObservedKnowledgeDocument, ToolExecutionResult, ToolHistoryEntry
 from app.tools.permissions import AgentToolPermissions
 from app.tools.registry import ToolRegistry
@@ -59,43 +53,41 @@ class OpenAIEvidenceAgent:
     def __init__(
         self,
         *,
-        model: str,
+        model: str | None = None,
         tools: ToolRegistry,
         permissions: AgentToolPermissions,
         max_steps: int,
         max_tool_calls: int,
         store_responses: bool,
         retry_limit: int,
-        client_provider: Callable[[], OpenAI],
+        client_provider: Callable[[], Any] = get_openai_client,
+        provider: StructuredModelProvider | None = None,
         retry_base_delay_ms: int = 250,
         timeout_seconds: float | None = None,
         metrics: RuntimeMetricsRecorder | None = None,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
-        self._model = model
         self._tools = tools
         self._permissions = permissions
         self._max_steps = max_steps
         self._max_tool_calls = max_tool_calls
-        self._store_responses = store_responses
-        self._client_provider = client_provider
-        self._retry_policy = RetryPolicy(
-            max_retries=retry_limit,
-            base_delay_ms=retry_base_delay_ms,
-        )
-        self._timeout_seconds = timeout_seconds
-        self._metrics = metrics
-        self._sleeper = sleeper
-        self._structured = OpenAIStructuredOutput(
-            model=model,
-            store_responses=store_responses,
-            retry_limit=retry_limit,
-            retry_base_delay_ms=retry_base_delay_ms,
-            timeout_seconds=timeout_seconds,
-            metrics=metrics,
-            sleeper=sleeper,
-            client_provider=client_provider,
-        )
+        if provider is None:
+            if model is None:
+                raise ValueError("model is required when provider is not supplied")
+            provider = OpenAIStructuredModelProvider(
+                model=model,
+                store_responses=store_responses,
+                client_provider=client_provider,
+                retry_policy=RetryPolicy(
+                    max_retries=retry_limit,
+                    base_delay_ms=retry_base_delay_ms,
+                ),
+                timeout_seconds=timeout_seconds,
+                metrics=metrics,
+                sleeper=sleeper,
+            )
+        self._provider = provider
+        self._structured = StructuredOutput(provider)
 
     def gather(self, request: AssessmentRequest) -> EvidenceAgentOutcome:
         """Run a finite one-tool-per-step loop, then emit a provenance-sanitized brief."""
@@ -181,67 +173,24 @@ class OpenAIEvidenceAgent:
         graph_neighborhoods: list[GraphNeighborhood],
         step: int,
     ) -> tuple[str, dict[str, object]] | None:
-        try:
-            decision_input = build_evidence_decision_input(
-                request=request,
-                evidence=evidence,
-                documents=documents,
-                history=history,
-                graph_neighborhoods=graph_neighborhoods,
-                step=step,
-                max_steps=self._max_steps,
-            )
-
-            def request_provider() -> Any:
-                started = perf_counter()
-                response = None
-                kwargs: dict[str, Any] = {
-                    "model": self._model,
-                    "input": [
-                        {"role": "system", "content": EVIDENCE_AGENT_SYSTEM_INSTRUCTIONS},
-                        {"role": "user", "content": decision_input},
-                    ],
-                    "tools": self._permissions.schemas_for(MultiAgentName.EVIDENCE, self._tools),
-                    "tool_choice": "auto",
-                    "parallel_tool_calls": False,
-                    "max_output_tokens": 200,
-                    "store": self._store_responses,
-                }
-                if self._timeout_seconds is not None:
-                    kwargs["timeout"] = self._timeout_seconds
-                try:
-                    response = self._client_provider().responses.create(**kwargs)
-                    return response
-                finally:
-                    if self._metrics is not None:
-                        self._metrics.record_model_call(
-                            max(0, round((perf_counter() - started) * 1_000)), response
-                        )
-
-            response = run_with_retry(
-                request_provider,
-                policy=self._retry_policy,
-                sleeper=self._sleeper,
-                on_retry=(self._metrics.record_retry if self._metrics is not None else None),
-            )
-        except OpenAIClientNotConfiguredError:
-            raise
-        except OpenAIError as exc:
-            raise LLMProviderError from exc
-        except (TypeError, ValueError) as exc:
-            raise InvalidLLMResponseError from exc
-
-        calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
-        if not calls:
+        decision_input = build_evidence_decision_input(
+            request=request,
+            evidence=evidence,
+            documents=documents,
+            history=history,
+            graph_neighborhoods=graph_neighborhoods,
+            step=step,
+            max_steps=self._max_steps,
+        )
+        decision = self._provider.decide_tool_call(
+            system=EVIDENCE_AGENT_SYSTEM_INSTRUCTIONS,
+            user=decision_input,
+            tools=self._permissions.schemas_for(MultiAgentName.EVIDENCE, self._tools),
+            max_output_tokens=200,
+        )
+        if decision is None:
             return None
-        call = calls[0]
-        try:
-            arguments = json.loads(call.arguments)
-        except (json.JSONDecodeError, TypeError):
-            arguments = {}
-        if not isinstance(arguments, dict):
-            arguments = {}
-        return str(call.name), arguments
+        return decision.name, decision.arguments
 
     @staticmethod
     def _merge_observations(

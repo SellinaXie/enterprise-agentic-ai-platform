@@ -12,6 +12,8 @@ from app.api.dependencies import (
     get_retrieval_service,
 )
 from app.core.exceptions import KnowledgeGraphDisabledError
+from app.identity.dependencies import get_authenticated_principal
+from app.identity.models import AuthenticatedPrincipal
 from app.ingestion.service import FileIngestionService
 from app.knowledge_graph.enrichment import KnowledgeGraphEnrichmentService
 from app.models.knowledge import KnowledgeSourceType
@@ -29,7 +31,15 @@ from app.schemas.knowledge import (
 )
 from app.schemas.knowledge_graph import KnowledgeGraphEnrichmentResponse
 
-router = APIRouter(prefix="/knowledge", tags=["knowledge"])
+router = APIRouter(
+    prefix="/knowledge",
+    tags=["knowledge"],
+    dependencies=[Depends(get_authenticated_principal)],
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"model": ErrorResponse},
+        status.HTTP_403_FORBIDDEN: {"model": ErrorResponse},
+    },
+)
 
 
 @router.post(
@@ -56,6 +66,7 @@ async def ingest_file(
         File(description="PDF, DOCX, UTF-8 TXT, or Markdown document"),
     ],
     service: Annotated[FileIngestionService, Depends(get_file_ingestion_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
     title: Annotated[str | None, Form(max_length=300)] = None,
     source_type: Annotated[KnowledgeSourceType | None, Form()] = None,
     metadata_json: Annotated[
@@ -87,6 +98,7 @@ async def ingest_file(
 def ingest_document(
     request: KnowledgeDocumentCreate,
     service: Annotated[KnowledgeIngestionService, Depends(get_knowledge_ingestion_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> KnowledgeIngestionResponse:
     result = service.ingest(request)
     return KnowledgeIngestionResponse(
@@ -107,6 +119,7 @@ def ingest_document(
 def get_document(
     document_id: UUID,
     service: Annotated[KnowledgeIngestionService, Depends(get_knowledge_ingestion_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> KnowledgeDocumentResponse:
     return KnowledgeDocumentResponse.model_validate(service.get_document(document_id))
 
@@ -127,6 +140,7 @@ def enrich_document_graph(
         KnowledgeGraphEnrichmentService | None,
         Depends(get_graph_enrichment_service),
     ],
+    _: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> KnowledgeGraphEnrichmentResponse:
     if service is None:
         raise KnowledgeGraphDisabledError
@@ -145,6 +159,7 @@ def enrich_document_graph(
 def search_knowledge(
     request: KnowledgeSearchRequest,
     service: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
 ) -> KnowledgeSearchResponse:
     evidence = service.search(
         request.query,

@@ -67,6 +67,23 @@ def test_rag_defaults_match_the_vector_schema() -> None:
     assert settings.database_connect_timeout_seconds == 5
 
 
+def test_provider_aliases_preserve_openai_compatibility() -> None:
+    settings = Settings(
+        _env_file=None,
+        CHAT_MODEL_PROVIDER="anthropic",
+        CHAT_MODEL_NAME="claude-synthetic",
+        EMBEDDING_MODEL="embedding-synthetic",
+        ANTHROPIC_API_KEY="synthetic-provider-key",
+    )
+
+    assert settings.chat_model_provider == "anthropic"
+    assert settings.chat_model_name == "claude-synthetic"
+    assert settings.openai_model == "claude-synthetic"
+    assert settings.embedding_model == "embedding-synthetic"
+    assert settings.openai_embedding_model == "embedding-synthetic"
+    assert settings.provider_is_configured is True
+
+
 def test_chunk_overlap_must_be_smaller_than_chunk_size() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, RAG_CHUNK_SIZE=300, RAG_CHUNK_OVERLAP=300)

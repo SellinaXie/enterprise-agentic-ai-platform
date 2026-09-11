@@ -5,8 +5,7 @@ import threading
 from collections.abc import Callable
 from queue import Empty, Queue
 
-from openai import APIConnectionError, APITimeoutError, InternalServerError, RateLimitError
-
+from app.providers.contracts import ProviderTimeoutError, ProviderTransientError
 from app.runtime.models import FailureCategory, RetryPolicy
 
 
@@ -15,10 +14,17 @@ class OperationTimeoutError(TimeoutError):
 
 
 def classify_failure(exc: Exception) -> FailureCategory:
-    """Classify known transient OpenAI conditions without exposing exception text."""
-    if isinstance(exc, APITimeoutError | OperationTimeoutError):
+    """Classify vendor-neutral transient conditions without exposing exception text."""
+    vendor_exception_name = type(exc).__name__
+    if isinstance(exc, ProviderTimeoutError | OperationTimeoutError) or vendor_exception_name in {
+        "APITimeoutError",
+    }:
         return FailureCategory.TIMEOUT
-    if isinstance(exc, RateLimitError | APIConnectionError | InternalServerError):
+    if isinstance(exc, ProviderTransientError) or vendor_exception_name in {
+        "APIConnectionError",
+        "InternalServerError",
+        "RateLimitError",
+    }:
         return FailureCategory.TRANSIENT
     if isinstance(exc, ValueError | TypeError):
         return FailureCategory.VALIDATION

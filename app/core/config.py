@@ -42,14 +42,23 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = Field(default=None, validation_alias="DATABASE_URL")
     database_connect_timeout_seconds: int = Field(default=5, ge=1, le=30)
 
+    chat_model_provider: Literal["openai", "anthropic"] = "openai"
+    chat_model_name: str = Field(
+        default="gpt-4.1-mini",
+        validation_alias=AliasChoices("CHAT_MODEL_NAME", "OPENAI_MODEL"),
+    )
+    embedding_provider: Literal["openai"] = "openai"
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        validation_alias=AliasChoices("EMBEDDING_MODEL", "OPENAI_EMBEDDING_MODEL"),
+    )
     openai_api_key: SecretStr | None = None
-    openai_model: str = "gpt-4.1-mini"
+    anthropic_api_key: SecretStr | None = None
     openai_timeout_seconds: float = Field(default=30.0, gt=0)
     openai_store_responses: bool = False
     provider_required: bool = True
 
     rag_enabled: bool = False
-    openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_dimension: Literal[1536] = KNOWLEDGE_EMBEDDING_DIMENSION
     rag_chunk_size: int = Field(default=1_200, ge=200, le=20_000)
     rag_chunk_overlap: int = Field(default=200, ge=0, le=5_000)
@@ -110,6 +119,28 @@ class Settings(BaseSettings):
     evaluation_llm_judge_enabled: bool = False
     evaluation_judge_model: str = "gpt-4.1-mini"
 
+    auth_enabled: bool = False
+    auth_jwt_algorithm: Literal["HS256", "RS256"] = "HS256"
+    auth_jwt_verification_key: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "AUTH_JWT_VERIFICATION_KEY", "AUTH_JWT_SECRET", "AUTH_JWT_PUBLIC_KEY"
+        ),
+    )
+    auth_jwt_issuer: str | None = None
+    auth_jwt_audience: str | None = None
+    auth_jwt_leeway_seconds: int = Field(default=30, ge=0, le=300)
+
+    @property
+    def openai_model(self) -> str:
+        """Backward-compatible alias for the configured chat model."""
+        return self.chat_model_name
+
+    @property
+    def openai_embedding_model(self) -> str:
+        """Backward-compatible alias for the configured embedding model."""
+        return self.embedding_model
+
     @property
     def openai_max_retries(self) -> int:
         """Backward-compatible name for the centralized provider retry limit."""
@@ -128,9 +159,12 @@ class Settings(BaseSettings):
     @property
     def provider_is_configured(self) -> bool:
         """Report provider configuration without exposing the credential."""
-        return bool(
-            self.openai_api_key is not None and self.openai_api_key.get_secret_value().strip()
+        credential = (
+            self.anthropic_api_key
+            if self.chat_model_provider == "anthropic"
+            else self.openai_api_key
         )
+        return bool(credential is not None and credential.get_secret_value().strip())
 
     @model_validator(mode="after")
     def validate_chunk_settings(self) -> Self:
@@ -162,7 +196,17 @@ class Settings(BaseSettings):
 
         if self.environment == "production":
             self._validate_production_settings()
+        elif self.auth_enabled:
+            self._validate_auth_settings()
         return self
+
+    def _validate_auth_settings(self) -> None:
+        if self.auth_jwt_verification_key is None:
+            raise ValueError("AUTH_JWT_VERIFICATION_KEY is required when authentication is enabled")
+        if not self.auth_jwt_issuer or not self.auth_jwt_audience:
+            raise ValueError(
+                "AUTH_JWT_ISSUER and AUTH_JWT_AUDIENCE are required when authentication is enabled"
+            )
 
     def _validate_production_settings(self) -> None:
         """Reject silent development fallbacks at the production boundary."""
@@ -195,11 +239,33 @@ class Settings(BaseSettings):
             )
         )
         if provider_needed and not self.provider_is_configured:
-            raise ValueError("OPENAI_API_KEY is required by the enabled production profile")
+            credential_name = (
+                "ANTHROPIC_API_KEY" if self.chat_model_provider == "anthropic" else "OPENAI_API_KEY"
+            )
+            raise ValueError(f"{credential_name} is required by the enabled production profile")
+        if (self.rag_enabled or self.knowledge_graph_enabled) and (
+            self.openai_api_key is None or not self.openai_api_key.get_secret_value().strip()
+        ):
+            raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings")
         if self.provider_is_configured:
-            api_key = self.openai_api_key.get_secret_value().casefold()  # type: ignore[union-attr]
+            selected_key = (
+                self.anthropic_api_key
+                if self.chat_model_provider == "anthropic"
+                else self.openai_api_key
+            )
+            api_key = selected_key.get_secret_value().casefold()  # type: ignore[union-attr]
             if any(marker in api_key for marker in UNSAFE_PLACEHOLDER_MARKERS):
-                raise ValueError("OPENAI_API_KEY contains an unsafe placeholder in production")
+                raise ValueError("Selected provider API key contains an unsafe placeholder")
+
+        if not self.auth_enabled:
+            raise ValueError("AUTH_ENABLED must be true in production")
+        self._validate_auth_settings()
+        assert self.auth_jwt_verification_key is not None
+        verification_key = self.auth_jwt_verification_key.get_secret_value().strip()
+        if len(verification_key) < 32 or any(
+            marker in verification_key.casefold() for marker in UNSAFE_PLACEHOLDER_MARKERS
+        ):
+            raise ValueError("AUTH_JWT_VERIFICATION_KEY is unsafe for production")
 
 
 @lru_cache

@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enterprise-ai-transformation-advisor"
-version = "0.8.0rc2"
+version = "0.8.0rc3"
 description = "Enterprise AI architecture, risk, governance, and retrieval intelligence."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.16,<2.0",
+    "anthropic>=1.5,<2.0",
     "fastapi>=0.115,<1.0",
     "langgraph>=0.2.45,<2.0",
     "openai>=2.0,<3.0",
@@ -17,6 +18,7 @@ dependencies = [
     "psycopg[binary]>=3.2,<4.0",
     "pydantic-settings>=2.6,<3.0",
     "pypdf>=5.0,<7.0",
+    "PyJWT[crypto]>=2.14,<3.0",
     "python-docx>=1.2,<2.0",
     "python-multipart>=0.0.18,<1.0",
     "sqlalchemy>=2.0.36,<3.0",
@@ -42,6 +44,7 @@ addopts = "-ra"
 testpaths = ["tests"]
 markers = [
     "postgres: requires a dedicated PostgreSQL test database configured via TEST_DATABASE_URL",
+    "live_provider: makes an explicitly enabled request to an external model provider",
 ]
 
 [tool.ruff]

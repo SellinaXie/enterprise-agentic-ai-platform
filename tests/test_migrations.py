@@ -18,7 +18,7 @@ def alembic_config(output_buffer: StringIO | None = None) -> Config:
 def test_alembic_has_one_linear_head() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
-    assert script.get_heads() == ["20260910_0005"]
+    assert script.get_heads() == ["20260911_0006"]
     assert script.get_base() == "20260909_0001"
 
 
@@ -50,6 +50,8 @@ def test_initial_migration_renders_postgresql_schema(monkeypatch: MonkeyPatch) -
     assert "knowledge_relationships_no_self_edge" in sql
     assert "CREATE TABLE assessment_runtime_states" in sql
     assert "CREATE TABLE human_review_events" in sql
+    assert "ADD COLUMN created_by_subject" in sql
+    assert "ADD COLUMN reviewer_subject" in sql
     assert "pending_review" in sql
     assert "DROP CONSTRAINT ck_assessments_assessment_status_values" in sql
     assert "ADD CONSTRAINT ck_assessments_assessment_status_values" in sql
@@ -71,6 +73,22 @@ def test_v7c_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) ->
     assert "DROP CONSTRAINT ck_assessments_assessment_status_values" in sql
     assert "ADD CONSTRAINT ck_assessments_assessment_status_values" in sql
     assert "ck_assessments_ck_assessments_assessment_status_values" not in sql
+
+
+def test_v8b_identity_migration_renders_postgresql_downgrade(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    output = StringIO()
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://migration_test:placeholder@localhost/migration_test",
+    )
+
+    command.downgrade(alembic_config(output), "20260911_0006:20260910_0005", sql=True)
+
+    sql = output.getvalue()
+    assert "DROP COLUMN created_by_subject" in sql
+    assert "DROP COLUMN reviewer_subject" in sql
 
 
 def test_v6_migration_renders_postgresql_downgrade(monkeypatch: MonkeyPatch) -> None:

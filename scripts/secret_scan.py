@@ -10,13 +10,20 @@ ROOT = Path(__file__).resolve().parents[1]
 SELF = Path(__file__).resolve()
 PATTERNS = {
     "OpenAI-style key": re.compile(r"\bsk-" + r"[A-Za-z0-9_-]{20,}\b"),
+    "Anthropic-style key": re.compile(r"\bsk-ant-" + r"[A-Za-z0-9_-]{20,}\b"),
+    "compact JWT": re.compile(
+        r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{16,}\b"
+    ),
     "AWS access key": re.compile(r"\bAKIA" + r"[0-9A-Z]{16}\b"),
     "GitHub token": re.compile(
         r"\b(?:gh[pousr]_" + r"[A-Za-z0-9]{36,}|github_pat_" + r"[A-Za-z0-9_]{40,})\b"
     ),
     "private key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
 }
-PASSWORD_ASSIGNMENT = re.compile(r"(?im)^\s*(?:[A-Z0-9_]*PASSWORD|password)\s*[:=]\s*([^#\r\n]+)")
+CREDENTIAL_ASSIGNMENT = re.compile(
+    r"(?im)^\s*(?:[A-Z0-9_]*(?:PASSWORD|SECRET|VERIFICATION_KEY)|password|secret)"
+    r"\s*[:=]\s*([^#\r\n]+)"
+)
 ALLOWED_PASSWORD_VALUES = (
     "${",
     "change-me",
@@ -51,10 +58,10 @@ def main() -> int:
             if pattern.search(content):
                 findings.append(f"{relative}: possible {label}")
         if path.suffix in {".yaml", ".yml", ".toml"} or path.name.startswith(".env"):
-            for match in PASSWORD_ASSIGNMENT.finditer(content):
+            for match in CREDENTIAL_ASSIGNMENT.finditer(content):
                 value = match.group(1).strip().strip("\"'").casefold()
                 if value and not value.startswith(ALLOWED_PASSWORD_VALUES):
-                    findings.append(f"{relative}: possible committed password value")
+                    findings.append(f"{relative}: possible committed credential value")
 
     if findings:
         print("\n".join(findings))

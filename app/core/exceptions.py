@@ -11,11 +11,32 @@ class ApplicationError(Exception):
         super().__init__(self.public_message)
 
 
+class AuthenticationRequiredError(ApplicationError):
+    """Raised for missing, invalid, expired, or untrusted bearer credentials."""
+
+    error_code = "authentication_required"
+    public_message = "Valid bearer authentication is required."
+
+
+class PermissionDeniedError(ApplicationError):
+    """Raised when an authenticated principal lacks the required role."""
+
+    error_code = "permission_denied"
+    public_message = "The authenticated principal is not permitted to perform this action."
+
+
 class OpenAIClientNotConfiguredError(ApplicationError):
     """Raised when an AI assessment is requested without an API key."""
 
     error_code = "openai_not_configured"
     public_message = "AI assessments are unavailable because OPENAI_API_KEY is not configured."
+
+
+class ModelProviderNotConfiguredError(ApplicationError):
+    """Raised when the selected structured-model provider lacks its credential."""
+
+    error_code = "model_provider_not_configured"
+    public_message = "AI assessments are unavailable because the model provider is not configured."
 
 
 class LLMProviderError(ApplicationError):

@@ -25,6 +25,7 @@ from app.core.exceptions import (
     RevisionLimitReachedError,
     RuntimeStateNotFoundError,
 )
+from app.identity.models import AuthenticatedPrincipal
 from app.models.assessment import AssessmentStatus, RiskSeverity
 from app.models.knowledge import RetrievedEvidence
 from app.models.persisted_assessment import PersistedAssessment
@@ -239,7 +240,13 @@ class RuntimeGovernanceService:
         self._required_assessment(assessment_id)
         return self._reviews.list_review_events(assessment_id)
 
-    def approve(self, assessment_id: UUID, request: HumanReviewRequest) -> HumanReviewDecision:
+    def approve(
+        self,
+        assessment_id: UUID,
+        request: HumanReviewRequest,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> HumanReviewDecision:
         state = self._required_pending_state(assessment_id)
         if state.candidate_result is None:
             raise PersistenceError
@@ -257,11 +264,18 @@ class RuntimeGovernanceService:
             new_status=HumanReviewStatus.APPROVED,
             request=request,
             telemetry=telemetry,
+            principal=principal,
         )
         self._reviews.commit()
         return self._decision(state, HumanReviewAction.APPROVED, record.status)
 
-    def reject(self, assessment_id: UUID, request: HumanReviewRequest) -> HumanReviewDecision:
+    def reject(
+        self,
+        assessment_id: UUID,
+        request: HumanReviewRequest,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> HumanReviewDecision:
         state = self._required_pending_state(assessment_id)
         record = self._assessments.mark_failed(
             assessment_id,
@@ -284,12 +298,17 @@ class RuntimeGovernanceService:
             new_status=HumanReviewStatus.REJECTED,
             request=request,
             telemetry=telemetry,
+            principal=principal,
         )
         self._reviews.commit()
         return self._decision(state, HumanReviewAction.REJECTED, record.status)
 
     def request_revision(
-        self, assessment_id: UUID, request: HumanReviewRequest
+        self,
+        assessment_id: UUID,
+        request: HumanReviewRequest,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
     ) -> HumanReviewDecision:
         state = self._required_pending_state(assessment_id)
         if state.revision_count >= state.max_revisions:
@@ -315,10 +334,13 @@ class RuntimeGovernanceService:
             action=HumanReviewAction.REVISION_REQUESTED,
             previous_status=HumanReviewStatus.PENDING,
             new_status=HumanReviewStatus.REVISION_REQUESTED,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=(
+                principal.subject if principal is not None else self._legacy_reviewer(request)
+            ),
             comment=request.comment,
             reason_codes=state.gate_result.reason_codes,
             revision_number=revision,
+            **self._actor_fields(principal),
         )
         self._reviews.commit()
         return HumanReviewDecision(
@@ -507,6 +529,7 @@ class RuntimeGovernanceService:
         new_status: HumanReviewStatus,
         request: HumanReviewRequest,
         telemetry: OperationalTelemetry,
+        principal: AuthenticatedPrincipal | None,
     ) -> None:
         self._reviews.save_state(
             assessment_id=state.assessment_id,
@@ -523,11 +546,30 @@ class RuntimeGovernanceService:
             action=action,
             previous_status=HumanReviewStatus.PENDING,
             new_status=new_status,
-            reviewer_id=request.reviewer_id,
+            reviewer_id=(
+                principal.subject if principal is not None else self._legacy_reviewer(request)
+            ),
             comment=request.comment,
             reason_codes=state.gate_result.reason_codes,
             revision_number=state.revision_count,
+            **self._actor_fields(principal),
         )
+
+    @staticmethod
+    def _actor_fields(principal: AuthenticatedPrincipal | None) -> dict[str, str | None]:
+        if principal is None:
+            return {}
+        return {
+            "reviewer_subject": principal.subject,
+            "reviewer_email": principal.email,
+            "reviewer_role": principal.audit_role.value,
+            "reviewer_issuer": principal.issuer,
+            "request_id": get_request_id(),
+        }
+
+    @staticmethod
+    def _legacy_reviewer(request: HumanReviewRequest) -> str | None:
+        return request.model_dump().get("reviewer_id")
 
     def _review_telemetry(
         self,

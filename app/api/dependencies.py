@@ -1,6 +1,5 @@
 """API dependency wiring for application services."""
 
-from functools import partial
 from typing import Annotated
 
 from fastapi import Depends
@@ -10,7 +9,7 @@ from app.agents.architecture_agent import OpenAIArchitectureAgent
 from app.agents.assessment_agent import OpenAIAssessmentAgent
 from app.agents.evidence_agent import OpenAIEvidenceAgent
 from app.agents.risk_governance_agent import OpenAIRiskGovernanceAgent
-from app.agents.structured_output import OpenAIStructuredOutput
+from app.agents.structured_output import StructuredOutput
 from app.agents.synthesis_agent import OpenAISynthesisAgent
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
@@ -28,7 +27,8 @@ from app.knowledge_graph.enrichment import KnowledgeGraphEnrichmentService
 from app.knowledge_graph.extraction import OpenAIEntityExtractor, OpenAIRelationshipExtractor
 from app.knowledge_graph.hybrid import HybridRAGService, HybridRetrievalService
 from app.knowledge_graph.retrieval import GraphRetrievalService
-from app.rag.embeddings import OpenAIEmbeddingsService
+from app.providers.contracts import EmbeddingProvider, StructuredModelProvider
+from app.providers.factory import build_embedding_provider, build_structured_model_provider
 from app.rag.ingestion import KnowledgeIngestionService
 from app.rag.retrieval import RetrievalService
 from app.rag.service import RAGService
@@ -39,9 +39,9 @@ from app.repositories.knowledge_graph import KnowledgeGraphRepository
 from app.repositories.runtime_reviews import RuntimeReviewRepository
 from app.runtime.gate import RuntimeRiskGate
 from app.runtime.metrics import RuntimeMetricsRecorder
-from app.runtime.models import RetryPolicy, RuntimeRiskPolicy
+from app.runtime.models import RuntimeRiskPolicy
 from app.services.assessments import AssessmentGenerator, AssessmentService
-from app.services.llm import OpenAIAssessmentGenerator, get_openai_client
+from app.services.llm import ProviderAssessmentGenerator
 from app.services.runtime_governance import RuntimeGovernanceService
 from app.tools.knowledge import build_knowledge_tool_registry
 from app.tools.permissions import AgentToolPermissions
@@ -53,22 +53,19 @@ def get_runtime_metrics_recorder() -> RuntimeMetricsRecorder:
     return RuntimeMetricsRecorder()
 
 
-def get_assessment_generator(
+def get_structured_model_provider(
     settings: Annotated[Settings, Depends(get_settings)],
     metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
+) -> StructuredModelProvider:
+    """Select one validated built-in structured model adapter."""
+    return build_structured_model_provider(settings, metrics=metrics)
+
+
+def get_assessment_generator(
+    provider: Annotated[StructuredModelProvider, Depends(get_structured_model_provider)],
 ) -> AssessmentGenerator:
-    """Build the structured generator with a lazily created OpenAI client."""
-    return OpenAIAssessmentGenerator(
-        model=settings.openai_model,
-        store_responses=settings.openai_store_responses,
-        client_provider=partial(get_openai_client, settings),
-        retry_policy=RetryPolicy(
-            max_retries=settings.provider_max_retries,
-            base_delay_ms=settings.provider_retry_base_delay_ms,
-        ),
-        timeout_seconds=settings.model_timeout_seconds,
-        metrics=metrics,
-    )
+    """Build assessment generation over the provider-neutral contract."""
+    return ProviderAssessmentGenerator(provider)
 
 
 def get_assessment_repository(
@@ -138,19 +135,9 @@ def get_knowledge_graph_repository(
 def get_embeddings_service(
     settings: Annotated[Settings, Depends(get_settings)],
     metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
-) -> OpenAIEmbeddingsService:
-    """Build the dimension-constrained OpenAI embeddings adapter."""
-    return OpenAIEmbeddingsService(
-        model=settings.openai_embedding_model,
-        dimension=settings.openai_embedding_dimension,
-        client_provider=partial(get_openai_client, settings),
-        retry_policy=RetryPolicy(
-            max_retries=settings.provider_max_retries,
-            base_delay_ms=settings.provider_retry_base_delay_ms,
-        ),
-        timeout_seconds=settings.embedding_timeout_seconds,
-        metrics=metrics,
-    )
+) -> EmbeddingProvider:
+    """Build the configured embedding adapter independently from chat selection."""
+    return build_embedding_provider(settings, metrics=metrics)
 
 
 def get_knowledge_ingestion_service(
@@ -159,7 +146,7 @@ def get_knowledge_ingestion_service(
         Depends(get_knowledge_document_repository),
     ],
     chunks: Annotated[KnowledgeChunkRepository, Depends(get_knowledge_chunk_repository)],
-    embeddings: Annotated[OpenAIEmbeddingsService, Depends(get_embeddings_service)],
+    embeddings: Annotated[EmbeddingProvider, Depends(get_embeddings_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> KnowledgeIngestionService:
     """Compose the plain-text knowledge ingestion pipeline."""
@@ -188,7 +175,7 @@ def get_file_parser_router(
 
 def get_retrieval_service(
     chunks: Annotated[KnowledgeChunkRepository, Depends(get_knowledge_chunk_repository)],
-    embeddings: Annotated[OpenAIEmbeddingsService, Depends(get_embeddings_service)],
+    embeddings: Annotated[EmbeddingProvider, Depends(get_embeddings_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RetrievalService:
     """Compose query embeddings with pgvector cosine search."""
@@ -231,16 +218,14 @@ def get_assessment_rag_service(
 def get_graph_structured_output(
     settings: Annotated[Settings, Depends(get_settings)],
     metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
-) -> OpenAIStructuredOutput:
+) -> StructuredOutput:
     """Build the schema-constrained adapter used by per-chunk graph extraction."""
-    return OpenAIStructuredOutput(
-        model=settings.openai_model,
-        store_responses=settings.openai_store_responses,
-        retry_limit=settings.provider_max_retries,
-        retry_base_delay_ms=settings.provider_retry_base_delay_ms,
-        timeout_seconds=settings.graph_extraction_timeout_seconds,
-        metrics=metrics,
-        client_provider=partial(get_openai_client, settings),
+    return StructuredOutput(
+        build_structured_model_provider(
+            settings,
+            metrics=metrics,
+            timeout_seconds=settings.graph_extraction_timeout_seconds,
+        )
     )
 
 
@@ -251,7 +236,7 @@ def get_graph_enrichment_service(
     ],
     chunks: Annotated[KnowledgeChunkRepository, Depends(get_knowledge_chunk_repository)],
     graph: Annotated[KnowledgeGraphRepository, Depends(get_knowledge_graph_repository)],
-    structured: Annotated[OpenAIStructuredOutput, Depends(get_graph_structured_output)],
+    structured: Annotated[StructuredOutput, Depends(get_graph_structured_output)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> KnowledgeGraphEnrichmentService | None:
     """Compose opt-in atomic enrichment over existing V3 document chunks."""
@@ -296,21 +281,12 @@ def get_file_ingestion_service(
 
 def get_assessment_agent(
     generator: Annotated[AssessmentGenerator, Depends(get_assessment_generator)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
+    provider: Annotated[StructuredModelProvider, Depends(get_structured_model_provider)],
 ) -> OpenAIAssessmentAgent:
-    """Build exactly one OpenAI-backed assessment reasoning agent."""
+    """Build exactly one provider-backed assessment reasoning agent."""
     return OpenAIAssessmentAgent(
-        model=settings.openai_model,
         generator=generator,
-        store_responses=settings.openai_store_responses,
-        client_provider=partial(get_openai_client, settings),
-        retry_policy=RetryPolicy(
-            max_retries=settings.provider_max_retries,
-            base_delay_ms=settings.provider_retry_base_delay_ms,
-        ),
-        timeout_seconds=settings.model_timeout_seconds,
-        metrics=metrics,
+        provider=provider,
     )
 
 
@@ -370,29 +346,19 @@ def get_agentic_assessment_workflow(
 
 
 def get_multi_agent_structured_output(
-    settings: Annotated[Settings, Depends(get_settings)],
-    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
-) -> OpenAIStructuredOutput:
+    provider: Annotated[StructuredModelProvider, Depends(get_structured_model_provider)],
+) -> StructuredOutput:
     """Build the shared provider adapter; each specialist still has its own prompt and contract."""
-    return OpenAIStructuredOutput(
-        model=settings.openai_model,
-        store_responses=settings.openai_store_responses,
-        retry_limit=settings.provider_max_retries,
-        retry_base_delay_ms=settings.provider_retry_base_delay_ms,
-        timeout_seconds=settings.model_timeout_seconds,
-        metrics=metrics,
-        client_provider=partial(get_openai_client, settings),
-    )
+    return StructuredOutput(provider)
 
 
 def get_evidence_agent(
     tools: Annotated[ToolRegistry, Depends(get_evidence_tool_registry)],
     settings: Annotated[Settings, Depends(get_settings)],
-    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
+    provider: Annotated[StructuredModelProvider, Depends(get_structured_model_provider)],
 ) -> OpenAIEvidenceAgent:
     """Build the only V5 specialist allowed to receive tool schemas."""
     return OpenAIEvidenceAgent(
-        model=settings.openai_model,
         tools=tools,
         permissions=AgentToolPermissions(),
         max_steps=settings.evidence_agent_max_steps,
@@ -401,27 +367,26 @@ def get_evidence_agent(
         retry_limit=settings.provider_max_retries,
         retry_base_delay_ms=settings.provider_retry_base_delay_ms,
         timeout_seconds=settings.model_timeout_seconds,
-        metrics=metrics,
-        client_provider=partial(get_openai_client, settings),
+        provider=provider,
     )
 
 
 def get_architecture_agent(
-    structured: Annotated[OpenAIStructuredOutput, Depends(get_multi_agent_structured_output)],
+    structured: Annotated[StructuredOutput, Depends(get_multi_agent_structured_output)],
 ) -> OpenAIArchitectureAgent:
     """Build the tool-free architecture specialist."""
     return OpenAIArchitectureAgent(structured)
 
 
 def get_risk_governance_agent(
-    structured: Annotated[OpenAIStructuredOutput, Depends(get_multi_agent_structured_output)],
+    structured: Annotated[StructuredOutput, Depends(get_multi_agent_structured_output)],
 ) -> OpenAIRiskGovernanceAgent:
     """Build the tool-free risk and governance specialist."""
     return OpenAIRiskGovernanceAgent(structured)
 
 
 def get_synthesis_agent(
-    structured: Annotated[OpenAIStructuredOutput, Depends(get_multi_agent_structured_output)],
+    structured: Annotated[StructuredOutput, Depends(get_multi_agent_structured_output)],
 ) -> OpenAISynthesisAgent:
     """Build the tool-free final synthesis specialist."""
     return OpenAISynthesisAgent(structured)

@@ -39,6 +39,10 @@ def _production_settings(**updates: object) -> Settings:
         "OPENAI_API_KEY": "configured-through-secret-injection",
         "CORS_ALLOWED_ORIGINS": "https://app.example.invalid",
         "TRUSTED_HOSTS": "api.example.invalid",
+        "AUTH_ENABLED": True,
+        "AUTH_JWT_SECRET": "a-secure-test-signing-secret-of-at-least-32-characters",
+        "AUTH_JWT_ISSUER": "https://identity.example.invalid/",
+        "AUTH_JWT_AUDIENCE": "enterprise-agentic-ai-platform",
     }
     values.update(updates)
     return Settings(**values)
@@ -56,6 +60,11 @@ def _production_settings(**updates: object) -> Settings:
         {"CORS_ALLOWED_ORIGINS": "*"},
         {"TRUSTED_HOSTS": "*"},
         {"LOG_EXCEPTION_TRACEBACKS": True},
+        {"AUTH_ENABLED": False},
+        {"AUTH_JWT_SECRET": None},
+        {"AUTH_JWT_SECRET": "replace-with-jwt-secret"},
+        {"AUTH_JWT_ISSUER": None},
+        {"AUTH_JWT_AUDIENCE": None},
     ],
 )
 def test_production_profile_rejects_unsafe_configuration(updates: dict[str, object]) -> None:
@@ -66,6 +75,18 @@ def test_production_profile_rejects_unsafe_configuration(updates: dict[str, obje
 def test_production_profile_can_explicitly_disable_unused_provider() -> None:
     settings = _production_settings(OPENAI_API_KEY=None, PROVIDER_REQUIRED=False)
     assert settings.provider_is_configured is False
+
+
+def test_production_can_select_anthropic_chat_without_claiming_anthropic_embeddings() -> None:
+    settings = _production_settings(
+        CHAT_MODEL_PROVIDER="anthropic",
+        CHAT_MODEL_NAME="claude-synthetic",
+        ANTHROPIC_API_KEY="configured-through-secret-injection",
+        OPENAI_API_KEY=None,
+    )
+
+    assert settings.provider_is_configured is True
+    assert settings.embedding_provider == "openai"
 
 
 def test_partial_pricing_configuration_is_rejected() -> None:
@@ -104,7 +125,7 @@ def test_readiness_accepts_connected_head_schema(
 ) -> None:
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
-        connection.execute(text("INSERT INTO alembic_version VALUES ('20260910_0005')"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('20260911_0006')"))
     application = create_app(
         Settings(
             _env_file=None,
@@ -251,6 +272,10 @@ def test_json_logging_omits_sensitive_payload_fields() -> None:
     record.prompt = "private prompt"
     record.api_key = "private key"
     record.embedding = [0.1, 0.2]
+    record.authorization = "Bearer signed-token"
+    record.access_token = "signed-token"
+    record.claims = {"sub": "private-subject"}
+    record.jwt = "signed-token"
 
     payload = json.loads(formatter.format(record))
 
@@ -260,6 +285,10 @@ def test_json_logging_omits_sensitive_payload_fields() -> None:
     assert "prompt" not in payload
     assert "api_key" not in payload
     assert "embedding" not in payload
+    assert "authorization" not in payload
+    assert "access_token" not in payload
+    assert "claims" not in payload
+    assert "jwt" not in payload
     assert "private" not in json.dumps(payload)
 
 

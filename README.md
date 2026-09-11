@@ -1,11 +1,53 @@
 # Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V8A backend for grounded enterprise AI architecture assessments. V8A preserves
-the complete V1-V7C implementation and adds reproducible containerization, real
-PostgreSQL/pgvector integration, CI, deployment health boundaries, configuration hardening,
-request correlation, and production-safe logging/error handling. Architecture remains the broad
-purpose of the platform; enterprise risk, controls, and governance are first-class dimensions
-rather than a replacement compliance-checking product.
+Production-minded V8B backend for grounded enterprise AI architecture assessments. V8B preserves
+the complete V1-V8A implementation and adds explicit model-provider contracts, OpenAI and
+Anthropic structured-reasoning adapters, independent OpenAI embeddings, signed-JWT identity,
+role-based review controls, and authenticated audit attribution.
+
+## V8B Platform Portability and Identity
+
+Application workflows depend on two deliberately narrow contracts: `StructuredModelProvider`
+for schema-constrained generation and bounded tool selection, and `EmbeddingProvider` for ordered
+vector batches. OpenAI implements both. Anthropic implements structured reasoning and tool
+selection only; it is not presented as an embedding provider. Selection uses a small built-in
+factory rather than a dynamic plugin system:
+
+```dotenv
+CHAT_MODEL_PROVIDER=openai       # openai | anthropic
+CHAT_MODEL_NAME=gpt-4.1-mini
+EMBEDDING_PROVIDER=openai        # the only V8B embedding adapter
+EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_API_KEY=replace-with-openai-key
+ANTHROPIC_API_KEY=replace-with-anthropic-key
+```
+
+Provider SDK clients and response objects remain inside `app/providers/`. Assessment, RAG, graph,
+and agent workflows consume typed application contracts. Capabilities explicitly report
+structured output, tool calling, usage reporting, and embeddings. Normal tests and CI use mocked
+providers and make no live model calls.
+
+All `/api/v1` assessment and knowledge routes require a bearer principal when
+`AUTH_ENABLED=true`; `/health` and `/readiness` remain public. JWT verification requires a signed
+token, a fixed configured algorithm, matching issuer and audience, an unexpired `exp`, a non-empty
+`sub`, and at least one known `analyst`, `reviewer`, or `admin` role. Review listing, approval,
+rejection, and revision requests require `reviewer` or `admin`. The legacy client `reviewer_id`
+field is retained for compatibility but ignored for authenticated audit identity.
+
+```dotenv
+AUTH_ENABLED=true
+AUTH_JWT_ALGORITHM=HS256         # HS256 secret or RS256 public verification key
+AUTH_JWT_SECRET=replace-with-at-least-32-random-characters
+# AUTH_JWT_VERIFICATION_KEY can carry an RS256 public key.
+AUTH_JWT_ISSUER=https://identity.example.com/
+AUTH_JWT_AUDIENCE=enterprise-agentic-ai-platform
+AUTH_JWT_LEEWAY_SECONDS=30
+```
+
+Production refuses to start with authentication disabled, an unsafe/missing verification key, or
+missing issuer/audience. V8B verifies locally configured JWTs behind a `TokenVerifier` boundary.
+External OIDC discovery/JWKS fetching, key rotation, password/user storage, provisioning, tenant
+isolation, and ABAC are explicitly deferred.
 
 ## V8A Production Foundation
 
@@ -49,7 +91,7 @@ docker compose --profile test run --rm integration-tests
 
 The test guard requires `TEST_DATABASE_URL` to use PostgreSQL, contain `test` in its database
 name, differ from `DATABASE_URL`, and not resemble a production database. The suite validates the
-empty-to-head migration chain, a `0005 → 0004 → 0005` round trip, native UUID/JSONB/TIMESTAMPTZ,
+empty-to-head migration chain, a `0006 → 0005 → 0006` round trip, native UUID/JSONB/TIMESTAMPTZ,
 pgvector `vector(1536)` and HNSW behavior, assessment persistence, graph foreign keys/uniqueness
 and bounded traversal, V7C checkpoints, approval, revision history, and restart/session
 boundaries.
@@ -67,10 +109,11 @@ To stop the stack while preserving the application database, run `docker compose
 
 ### Liveness and readiness
 
-- `GET /health` is process liveness only. It does not query PostgreSQL or OpenAI.
+- `GET /health` is process liveness only. It does not query PostgreSQL or a model provider.
 - `GET /readiness` checks critical configuration, database connectivity, Alembic head
-  `20260910_0005`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
-  when any check fails. It never calls OpenAI or exposes a DSN, credential, SQL error, or traceback.
+  `20260911_0006`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
+  when any check fails. It never calls a provider or exposes a DSN, credential, SQL error, or
+  traceback.
 
 ### Configuration and HTTP boundary
 
@@ -94,7 +137,7 @@ For direct development, use `uvicorn app.main:app --reload`. The image runs
 the application's structured middleware. A production reverse proxy must validate/replace
 forwarded headers, send an allowed `Host`, enforce body/time limits, and configure Uvicorn's
 trusted forwarded IPs for that specific network rather than trusting arbitrary clients. Shutdown
-closes the lazy provider client and disposes SQLAlchemy pools; request-scoped sessions and upload
+closes lazy provider clients and disposes SQLAlchemy pools; request-scoped sessions and upload
 handles retain their existing explicit cleanup boundaries.
 
 JSON logs include timestamp, level, event, request ID, assessment ID where available, status, and
@@ -102,7 +145,7 @@ duration. Sensitive field names, prompts, private reasoning, embeddings, full do
 authorization data, provider messages, secrets, and production tracebacks are excluded. Secrets
 must be injected through environment variables or the deployment platform and must never be baked
 into the image. `pyproject.toml` declares supported direct-dependency ranges; `constraints.txt`
-pins the direct versions validated by V8A for repeatable container and CI installation without
+pins the direct versions validated by V8B for repeatable container and CI installation without
 claiming a fully locked transitive supply chain.
 
 ### CI boundary
@@ -113,10 +156,10 @@ secret-scan, package-build, image-build, or Compose-smoke failures. PostgreSQL t
 real pgvector service in CI; V7A/V7B remain deterministic and the optional LLM judge is disabled.
 No live provider call is required.
 
-V8A is a production-minded reference implementation, not certification for regulated production
-use and not a substitute for organizational security/compliance controls. Authentication,
-RBAC/ABAC, SSO, authenticated reviewer identity, provider portability, tenant isolation, frontend,
-cloud deployment, managed secrets, backup automation, and external observability remain deferred.
+V8B is a production-minded reference implementation, not certification for regulated production
+use and not a substitute for organizational security/compliance controls. External OIDC/JWKS,
+ABAC, SSO provisioning, tenant isolation, frontend, cloud deployment, managed secrets, backup
+automation, and external observability remain deferred.
 
 ## Runtime Reliability & Risk Controls
 
@@ -152,9 +195,11 @@ POST /api/v1/assessments/{id}/reviews/request-revision
 Approval finalizes the exact persisted validated candidate. Rejection stores only a stable safe
 failure. A revision request preserves the candidate and all earlier events, increments a bounded
 counter, and can be resumed only through the trusted internal revision path after a new candidate
-has been generated and validated. Reviewer IDs and comments are optional bounded strings;
-comments are untrusted audit content and are never executed, added to system prompts, or allowed
-to change tool permissions. `human_review_events` is append-only at the repository boundary.
+has been generated and validated. Reviewer comments remain optional bounded, untrusted audit
+content and are never executed, added to system prompts, or allowed to change tool permissions.
+Authenticated API decisions derive reviewer subject, email, role, issuer, and request ID from the
+verified principal rather than the legacy client reviewer ID. `human_review_events` is append-only
+at the repository boundary.
 
 Provider operations use explicit per-call model, embedding, and graph-extraction timeouts plus
 bounded retries for recognized timeouts, connection failures, rate limits, and selected provider
@@ -194,10 +239,9 @@ GRAPH_EXTRACTION_TIMEOUT_SECONDS=30
 # MODEL_OUTPUT_COST_PER_1M_TOKENS=0.00
 ```
 
-V7C human review is a workflow control, not a security boundary. It does not provide authenticated
-reviewer identity, enterprise RBAC/ABAC, SSO, tenant isolation, or cryptographic approval
-assurance. V8A adds the production foundation described above but not identity, authorization,
-frontend, hosted deployment, external monitoring SaaS, LangSmith, MCP, or enterprise secrets
+V8B adds authenticated reviewer identity and role enforcement around the V7C workflow. It does
+not claim enterprise SSO provisioning, ABAC, tenant isolation, cryptographic non-repudiation,
+frontend, hosted deployment, external monitoring SaaS, LangSmith, MCP, or managed-secret
 infrastructure.
 
 ## V7B architecture and risk/governance quality evaluation
@@ -985,8 +1029,12 @@ V7C revision `20260910_0005` adds `pending_review` to assessment lifecycle value
 `assessment_runtime_states` for the current durable checkpoint and `human_review_events` for
 append-only audit history. Candidate results, gate state, safe execution metadata, and operational
 telemetry use PostgreSQL JSONB; IDs use UUID and timestamps use TIMESTAMPTZ. Its downgrade removes
-the V7C tables and restores the prior assessment-status vocabulary. Alembic head is
-`20260910_0005`.
+the V7C tables and restores the prior assessment-status vocabulary.
+
+V8B revision `20260911_0006` adds nullable `assessments.created_by_subject` and nullable reviewer
+subject, email, role, issuer, and request-ID fields to `human_review_events`. Nullable additions
+preserve historical V7C rows. Its downgrade removes only these identity columns and their new
+assessment index. Alembic head is `20260911_0006`.
 
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate
@@ -1035,6 +1083,9 @@ judge and provider boundary are mocked.
 V7C adds policy-outcome, reason-code, durable review, approval, rejection, bounded revision,
 three-mode resume, invalid-transition, comment-injection isolation, retry/backoff, per-boundary
 timeout, failure classification, telemetry accuracy/privacy, migration, and additive API coverage.
+V8B adds mocked OpenAI/Anthropic adapter and capability tests, signed-JWT claim validation,
+401/403 request correlation, role enforcement, spoof-resistant reviewer attribution, public health
+checks, OpenAPI bearer security, production auth configuration, and PostgreSQL identity auditing.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -1064,7 +1115,9 @@ V6.5 adds a PostgreSQL round trip for file-origin document metadata, chunk page 
 normalized deduplication without requiring a binary fixture or external dataset in the database.
 
 V7C adds a PostgreSQL checkpoint/restart boundary with JSONB candidate state, UUID audit events,
-TIMESTAMPTZ verification, and approval-driven finalization. It uses only synthetic fixtures.
+TIMESTAMPTZ verification, and approval-driven finalization. V8B adds the `0006 → 0005 → 0006`
+migration round trip, authenticated assessment ownership, and reviewer subject/email/role/issuer
+plus request-ID persistence. It uses only synthetic fixtures.
 
 Do not run multiple test processes against the same test database. Run only fast tests with:
 
@@ -1082,11 +1135,12 @@ assurance.
 V7B adds no LangSmith, OpenTelemetry platform, vendor dashboard, persistent tracing, full
 latency/token/cost analytics, SLO/SLA, retry framework, timeout framework, LangGraph interrupt or
 resume, human-review queue, approval workflow, escalation engine, or runtime quality-gate
-enforcement. V7C and V8A now provide internal reliability, observability, and infrastructure. MCP
+enforcement. V7C, V8A, and V8B provide internal reliability, infrastructure, provider, and identity
+boundaries. MCP
 remains deferred until a concrete interoperability use case exists.
 
 The V6.5 ingestion limitations remain: scanned/image-only PDFs need OCR; file ingestion is
 synchronous and memory-bounded; and legacy Word, spreadsheets, presentations, image understanding,
 archive ingestion, web crawling, and external enterprise connectors are not implemented.
-Production infrastructure—including Docker, CI/CD, authentication, authorization, malware
-scanning, object storage, queues, hosted deployment, and frontend UI—remains deferred beyond V8A.
+Malware scanning, object storage, queues, hosted deployment, managed OIDC/JWKS, tenant isolation,
+and frontend UI remain deferred beyond V8B.

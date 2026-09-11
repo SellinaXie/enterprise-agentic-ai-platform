@@ -23,6 +23,7 @@ from app.core.exceptions import (
     ApplicationError,
     AssessmentGenerationError,
     AssessmentNotFoundError,
+    AuthenticationRequiredError,
     DatabaseNotConfiguredError,
     DatabaseUnavailableError,
     DocumentParseError,
@@ -44,8 +45,10 @@ from app.core.exceptions import (
     KnowledgePersistenceError,
     KnowledgeStoreUnavailableError,
     LLMProviderError,
+    ModelProviderNotConfiguredError,
     OCRRequiredError,
     OpenAIClientNotConfiguredError,
+    PermissionDeniedError,
     PersistenceError,
     RevisionLimitReachedError,
     RuntimeStateNotFoundError,
@@ -54,8 +57,8 @@ from app.core.exceptions import (
 )
 from app.core.logging import configure_logging
 from app.db.session import dispose_database_resources
+from app.providers.factory import close_provider_clients
 from app.schemas.errors import ErrorDetail, ErrorResponse
-from app.services.llm import close_openai_client
 
 logger = logging.getLogger(__name__)
 REQUEST_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
@@ -115,7 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
-            close_openai_client()
+            close_provider_clients()
             dispose_database_resources()
             logger.info("application_stopped")
 
@@ -134,7 +137,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=resolved_settings.parsed_cors_allowed_origins,
             allow_credentials=resolved_settings.cors_allow_credentials,
             allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=["Accept", "Content-Type", "X-Request-ID"],
+            allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
             expose_headers=["X-Request-ID"],
         )
     if resolved_settings.parsed_trusted_hosts:
@@ -146,11 +149,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.exception_handler(ApplicationError)
     async def handle_application_error(request: Request, exc: ApplicationError) -> JSONResponse:
         status_codes = {
+            AuthenticationRequiredError: status.HTTP_401_UNAUTHORIZED,
+            PermissionDeniedError: status.HTTP_403_FORBIDDEN,
             AssessmentNotFoundError: status.HTTP_404_NOT_FOUND,
             RuntimeStateNotFoundError: status.HTTP_404_NOT_FOUND,
             InvalidReviewTransitionError: status.HTTP_409_CONFLICT,
             RevisionLimitReachedError: status.HTTP_409_CONFLICT,
             OpenAIClientNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            ModelProviderNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
             LLMProviderError: status.HTTP_502_BAD_GATEWAY,
             InvalidLLMResponseError: status.HTTP_502_BAD_GATEWAY,
             AssessmentGenerationError: status.HTTP_502_BAD_GATEWAY,
@@ -177,17 +183,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             OCRRequiredError: status.HTTP_422_UNPROCESSABLE_CONTENT,
             TextDecodeError: status.HTTP_422_UNPROCESSABLE_CONTENT,
         }
-        return _error_response(
-            request_id=getattr(request.state, "request_id", get_request_id()),
+        request_id = getattr(request.state, "request_id", get_request_id())
+        response = _error_response(
+            request_id=request_id,
             body_request_id=(
-                getattr(request.state, "request_id", None)
-                if getattr(request.state, "request_id_supplied", False)
-                else None
+                request_id
+                if isinstance(exc, AuthenticationRequiredError | PermissionDeniedError)
+                else (
+                    getattr(request.state, "request_id", None)
+                    if getattr(request.state, "request_id_supplied", False)
+                    else None
+                )
             ),
             code=exc.error_code,
             message=exc.public_message,
             status_code=status_codes.get(type(exc), status.HTTP_500_INTERNAL_SERVER_ERROR),
         )
+        if isinstance(exc, AuthenticationRequiredError):
+            response.headers["www-authenticate"] = "Bearer"
+        return response
 
     @application.exception_handler(RequestValidationError)
     async def handle_request_validation_error(

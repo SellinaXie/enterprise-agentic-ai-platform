@@ -18,6 +18,7 @@ from app.core.exceptions import (
     DatabaseUnavailableError,
     PersistenceError,
 )
+from app.identity.models import AuthenticatedPrincipal
 from app.models.assessment import ExternalEvidenceStatus
 from app.models.knowledge import RAGPreparation, RetrievedEvidence
 from app.models.knowledge_graph import HybridRAGPreparation
@@ -52,6 +53,7 @@ class AssessmentRepositoryProtocol(Protocol):
         industry: str,
         business_problem: str,
         request_payload: dict[str, Any],
+        created_by_subject: str | None = None,
     ) -> PersistedAssessment: ...
 
     def get_by_id(self, assessment_id: UUID) -> PersistedAssessment | None: ...
@@ -160,19 +162,29 @@ class AssessmentService:
         self._multi_agent_workflow = multi_agent_workflow
         self._runtime_governance = runtime_governance
 
-    def generate_assessment(self, request: AssessmentRequest) -> AssessmentResponse:
+    def generate_assessment(
+        self,
+        request: AssessmentRequest,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> AssessmentResponse:
         """Persist lifecycle state around synchronous structured generation."""
         assessment_id = uuid4()
         log_context = {"assessment_id": str(assessment_id)}
 
         request_payload = request.model_dump(mode="json")
         try:
+            create_arguments: dict[str, Any] = {
+                "assessment_id": assessment_id,
+                "company_name": request.company_name,
+                "industry": request.industry,
+                "business_problem": request.business_problem,
+                "request_payload": request_payload,
+            }
+            if principal is not None:
+                create_arguments["created_by_subject"] = principal.subject
             self._repository.create(
-                assessment_id=assessment_id,
-                company_name=request.company_name,
-                industry=request.industry,
-                business_problem=request.business_problem,
-                request_payload=request_payload,
+                **create_arguments,
             )
             self._repository.commit()
         except SQLAlchemyError as exc:

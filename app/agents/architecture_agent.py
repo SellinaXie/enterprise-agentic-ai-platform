@@ -7,7 +7,7 @@ from app.agents.architecture_prompt import (
     build_architecture_input,
 )
 from app.agents.multi_agent_models import ArchitectureRecommendation, EvidenceBrief
-from app.agents.structured_output import OpenAIStructuredOutput
+from app.agents.structured_output import StructuredOutput
 from app.schemas.assessment import AssessmentRequest
 
 
@@ -24,7 +24,7 @@ class ArchitectureAgent(Protocol):
 class OpenAIArchitectureAgent:
     """Produce a typed architecture recommendation without receiving tools."""
 
-    def __init__(self, structured_output: OpenAIStructuredOutput) -> None:
+    def __init__(self, structured_output: StructuredOutput) -> None:
         self._structured_output = structured_output
 
     def analyze(

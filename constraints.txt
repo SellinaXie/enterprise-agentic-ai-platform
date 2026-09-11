@@ -1,6 +1,7 @@
-# Direct dependency versions validated for the V8A Python 3.12 build.
+# Direct dependency versions validated for the V8B Python 3.12 build.
 # Transitive dependencies remain governed by the compatible ranges in pyproject.toml.
 alembic==1.19.2
+anthropic==1.5.0
 build==1.6.1
 fastapi==0.141.1
 httpx==0.28.1
@@ -11,6 +12,7 @@ psycopg==3.3.5
 psycopg-binary==3.3.5
 pydantic-settings==2.15.0
 pypdf==6.18.0
+PyJWT==2.14.0
 pytest==9.1.1
 python-docx==1.2.0
 python-multipart==0.0.32

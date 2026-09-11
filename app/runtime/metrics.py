@@ -48,14 +48,25 @@ class RuntimeMetricsRecorder:
         )
 
     def _record_usage(self, response: Any | None) -> None:
+        if isinstance(response, ProviderTokenUsage):
+            self._usage_observed = True
+            self._input_tokens += response.input_tokens
+            self._output_tokens += response.output_tokens
+            self._total_tokens += response.total_tokens
+            return
         usage = getattr(response, "usage", None)
         if usage is None:
             return
-        values = (
-            getattr(usage, "input_tokens", None),
-            getattr(usage, "output_tokens", None),
-            getattr(usage, "total_tokens", None),
-        )
+        input_tokens = getattr(usage, "input_tokens", None)
+        output_tokens = getattr(usage, "output_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
+        if (
+            total_tokens is None
+            and isinstance(input_tokens, int)
+            and isinstance(output_tokens, int)
+        ):
+            total_tokens = input_tokens + output_tokens
+        values = (input_tokens, output_tokens, total_tokens)
         if not all(isinstance(value, int) and value >= 0 for value in values):
             return
         self._usage_observed = True

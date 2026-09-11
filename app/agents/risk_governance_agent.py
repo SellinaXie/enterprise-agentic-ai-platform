@@ -7,7 +7,7 @@ from app.agents.risk_governance_prompt import (
     RISK_GOVERNANCE_AGENT_SYSTEM_INSTRUCTIONS,
     build_risk_governance_input,
 )
-from app.agents.structured_output import OpenAIStructuredOutput
+from app.agents.structured_output import StructuredOutput
 from app.schemas.assessment import AssessmentRequest
 
 
@@ -24,7 +24,7 @@ class RiskGovernanceAgent(Protocol):
 class OpenAIRiskGovernanceAgent:
     """Produce an independent typed control review without receiving tools."""
 
-    def __init__(self, structured_output: OpenAIStructuredOutput) -> None:
+    def __init__(self, structured_output: StructuredOutput) -> None:
         self._structured_output = structured_output
 
     def review(

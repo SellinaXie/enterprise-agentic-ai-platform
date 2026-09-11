@@ -1,10 +1,12 @@
 """Live verification of the V2-V4 persistence and V3 pgvector layers."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import Mock
 from uuid import UUID, uuid4
 
+import jwt
 import pytest
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
@@ -62,6 +64,9 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
     knowledge_columns = {
         column["name"]: column for column in schema.get_columns("knowledge_chunks")
     }
+    review_columns = {
+        column["name"]: column for column in schema.get_columns("human_review_events")
+    }
     knowledge_indexes = {index["name"] for index in schema.get_indexes("knowledge_chunks")}
     with postgres_engine.connect() as connection:
         vector_version = connection.execute(
@@ -69,7 +74,7 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
         ).scalar_one()
 
     assert version.startswith("PostgreSQL ")
-    assert revision == "20260910_0005"
+    assert revision == "20260911_0006"
     assert "assessments" in schema.get_table_names()
     assert "knowledge_documents" in schema.get_table_names()
     assert "knowledge_chunks" in schema.get_table_names()
@@ -80,6 +85,12 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
     assert isinstance(columns["request_payload"]["type"], JSONB)
     assert isinstance(columns["result_payload"]["type"], JSONB)
     assert isinstance(columns["execution_metadata"]["type"], JSONB)
+    assert columns["created_by_subject"]["nullable"] is True
+    assert review_columns["reviewer_subject"]["nullable"] is True
+    assert review_columns["reviewer_email"]["nullable"] is True
+    assert review_columns["reviewer_role"]["nullable"] is True
+    assert review_columns["reviewer_issuer"]["nullable"] is True
+    assert review_columns["request_id"]["nullable"] is True
     assert isinstance(columns["created_at"]["type"], TIMESTAMP)
     assert columns["created_at"]["type"].timezone is True
     assert columns["updated_at"]["type"].timezone is True
@@ -256,7 +267,7 @@ def test_postgres_constraints_accept_independent_rows(
     assert stored_ids == {first_id, second_id}
 
 
-def test_api_create_and_get_with_mocked_openai(
+def test_authenticated_api_create_and_get_with_mocked_openai(
     postgres_database_url: str,
     postgres_engine: Engine,
     postgres_session_factory: sessionmaker[Session],
@@ -304,24 +315,48 @@ def test_api_create_and_get_with_mocked_openai(
         DATABASE_URL=postgres_database_url,
         OPENAI_API_KEY=None,
         RAG_ENABLED=True,
+        AUTH_ENABLED=True,
+        AUTH_JWT_SECRET="postgres-synthetic-signing-secret-more-than-32-characters",
+        AUTH_JWT_ISSUER="https://postgres-test.identity.invalid/",
+        AUTH_JWT_AUDIENCE="enterprise-agentic-ai-platform",
     )
     application = create_app(settings)
     application.dependency_overrides[get_assessment_generator] = lambda: generator
     application.dependency_overrides[get_embeddings_service] = lambda: embeddings
 
+    token = jwt.encode(
+        {
+            "sub": "postgres-analyst-123",
+            "iss": "https://postgres-test.identity.invalid/",
+            "aud": "enterprise-agentic-ai-platform",
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "roles": ["analyst"],
+            "email": "analyst@postgres.test",
+        },
+        "postgres-synthetic-signing-secret-more-than-32-characters",
+        algorithm="HS256",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
     with TestClient(application) as client:
         created_response = client.post(
             "/api/v1/assessments",
             json=synthetic_assessment_request.model_dump(mode="json"),
+            headers=headers,
         )
         assert created_response.status_code == 200
         created = AssessmentResponse.model_validate(created_response.json())
 
-        retrieved_response = client.get(f"/api/v1/assessments/{created.assessment_id}")
+        retrieved_response = client.get(
+            f"/api/v1/assessments/{created.assessment_id}", headers=headers
+        )
         assert retrieved_response.status_code == 200
         retrieved = AssessmentResponse.model_validate(retrieved_response.json())
 
     assert created.status == AssessmentStatus.COMPLETED
     assert created.result == expected_result
     assert retrieved == created
+    with postgres_session_factory() as session:
+        persisted = AssessmentRepository(session).get_by_id(created.assessment_id)
+    assert persisted is not None
+    assert persisted.created_by_subject == "postgres-analyst-123"
     openai_client.responses.parse.assert_called_once()

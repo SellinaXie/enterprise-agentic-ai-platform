@@ -220,7 +220,13 @@ class QualityGateResult(RuntimeModel):
 class HumanReviewRequest(RuntimeModel):
     """Bounded untrusted reviewer action input."""
 
-    reviewer_id: str | None = Field(default=None, min_length=1, max_length=100)
+    reviewer_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+        deprecated=True,
+        description="Legacy input retained for compatibility; authenticated APIs ignore it.",
+    )
     comment: str | None = Field(default=None, min_length=1, max_length=2_000)
 
 
@@ -233,6 +239,11 @@ class HumanReviewRecord(RuntimeModel):
     previous_status: HumanReviewStatus
     new_status: HumanReviewStatus
     reviewer_id: str | None
+    reviewer_subject: str | None = None
+    reviewer_email: str | None = None
+    reviewer_role: str | None = None
+    reviewer_issuer: str | None = None
+    request_id: str | None = None
     comment: str | None
     reason_codes: list[RuntimeReasonCode]
     revision_number: int = Field(ge=0)

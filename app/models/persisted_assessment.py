@@ -22,3 +22,4 @@ class PersistedAssessment:
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+    created_by_subject: str | None = None

@@ -161,9 +161,15 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
                 round_trip_downgrade_revision = MigrationContext.configure(
                     connection
                 ).get_current_revision()
-                runtime_tables_removed = not inspect(connection).has_table(
+                identity_columns_removed = "created_by_subject" not in {
+                    column["name"] for column in inspect(connection).get_columns("assessments")
+                } and "reviewer_subject" not in {
+                    column["name"]
+                    for column in inspect(connection).get_columns("human_review_events")
+                }
+                runtime_tables_preserved = inspect(connection).has_table(
                     "assessment_runtime_states"
-                ) and not inspect(connection).has_table("human_review_events")
+                ) and inspect(connection).has_table("human_review_events")
         finally:
             migration_engine.dispose()
 
@@ -192,9 +198,10 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
     assert assessment_table_removed
     assert knowledge_tables_removed
     assert graph_tables_removed
-    assert round_trip_downgrade_revision == "20260910_0004"
-    assert runtime_tables_removed
-    assert upgrade_revision == "20260910_0005"
+    assert round_trip_downgrade_revision == "20260910_0005"
+    assert identity_columns_removed
+    assert runtime_tables_preserved
+    assert upgrade_revision == "20260911_0006"
     assert assessment_table_created
     assert knowledge_tables_created
     assert graph_tables_created

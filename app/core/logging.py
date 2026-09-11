@@ -16,6 +16,7 @@ class JsonFormatter(logging.Formatter):
     _sensitive_fields = frozenset(
         {
             "authorization",
+            "authorization_header",
             "api_key",
             "database_url",
             "document",
@@ -23,10 +24,13 @@ class JsonFormatter(logging.Formatter):
             "embedding",
             "embeddings",
             "password",
+            "claims",
             "prompt",
             "provider_message",
             "reasoning",
             "secret",
+            "token",
+            "jwt",
             "system_prompt",
             "tool_arguments",
             "user_prompt",
@@ -55,7 +59,9 @@ class JsonFormatter(logging.Formatter):
                 if key not in self._reserved_fields
                 and key not in {"message", "asctime", "request_id"}
                 and key.casefold() not in self._sensitive_fields
-                and not key.casefold().endswith(("_password", "_secret", "_api_key"))
+                and not key.casefold().endswith(
+                    ("_password", "_secret", "_api_key", "_token", "_jwt", "_claims")
+                )
             }
         )
         if record.exc_info:

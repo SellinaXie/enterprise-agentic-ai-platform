@@ -39,6 +39,7 @@ def _to_record(model: AssessmentModel) -> PersistedAssessment:
         created_at=created_at,
         updated_at=updated_at,
         completed_at=_as_utc(model.completed_at),
+        created_by_subject=model.created_by_subject,
     )
 
 
@@ -62,6 +63,7 @@ class AssessmentRepository:
         industry: str,
         business_problem: str,
         request_payload: Mapping[str, Any],
+        created_by_subject: str | None = None,
     ) -> PersistedAssessment:
         """Add a pending assessment and flush it into the current transaction."""
         now = self._clock()
@@ -72,6 +74,7 @@ class AssessmentRepository:
             industry=industry,
             business_problem=business_problem,
             request_payload=dict(request_payload),
+            created_by_subject=created_by_subject,
             created_at=now,
             updated_at=now,
         )

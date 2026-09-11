@@ -7,7 +7,7 @@ from app.agents.multi_agent_models import (
     EvidenceBrief,
     RiskGovernanceReview,
 )
-from app.agents.structured_output import OpenAIStructuredOutput
+from app.agents.structured_output import StructuredOutput
 from app.agents.synthesis_prompt import (
     SYNTHESIS_AGENT_SYSTEM_INSTRUCTIONS,
     build_synthesis_input,
@@ -32,7 +32,7 @@ class SynthesisAgent(Protocol):
 class OpenAISynthesisAgent:
     """Reconcile typed handoffs into the existing AssessmentResult schema."""
 
-    def __init__(self, structured_output: OpenAIStructuredOutput) -> None:
+    def __init__(self, structured_output: StructuredOutput) -> None:
         self._structured_output = structured_output
 
     def synthesize(

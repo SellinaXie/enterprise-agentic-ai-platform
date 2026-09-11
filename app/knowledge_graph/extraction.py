@@ -3,7 +3,7 @@
 from typing import Protocol
 from uuid import UUID
 
-from app.agents.structured_output import OpenAIStructuredOutput
+from app.agents.structured_output import StructuredOutput
 from app.core.exceptions import InvalidLLMResponseError
 from app.knowledge_graph.normalization import canonicalize_entity_name, normalize_entity_name
 from app.knowledge_graph.prompts import (
@@ -43,7 +43,7 @@ class OpenAIEntityExtractor:
 
     def __init__(
         self,
-        structured_output: OpenAIStructuredOutput,
+        structured_output: StructuredOutput,
         *,
         max_entities: int,
         min_confidence: float,
@@ -87,7 +87,7 @@ class OpenAIRelationshipExtractor:
 
     def __init__(
         self,
-        structured_output: OpenAIStructuredOutput,
+        structured_output: StructuredOutput,
         *,
         min_confidence: float,
     ) -> None:
