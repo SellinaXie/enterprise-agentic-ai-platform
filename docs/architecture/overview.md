@@ -20,6 +20,9 @@ than becoming the default.
 Enterprise documents + business context
                    |
                    v
+      Authenticated Enterprise Product UI
+                   |
+                   v
        Validate, parse, normalize, chunk
                    |
                    v
@@ -152,10 +155,13 @@ boundary also avoids advertising capabilities a provider does not supply.
 
 ## Current production foundation
 
-The backend runs on Python 3.12 and FastAPI, with a non-root Docker image and a Compose topology for
-the API, PostgreSQL 16 with pgvector, and an explicit Alembic migration job. Health checks distinguish
-process liveness from readiness; readiness verifies configuration, database connectivity, migration
-head, and required tables without calling a model provider or exposing database errors.
+The product interface runs on Next.js, React, and TypeScript and calls only versioned FastAPI
+contracts. It provides assessment, evidence, evaluation, operations, runtime-decision, and
+role-aware human-review views without moving backend policy into the browser. Both UI and API have
+non-root production images. Compose connects them to PostgreSQL 16 with pgvector and an explicit
+Alembic migration job. Health checks distinguish process liveness from readiness; readiness verifies
+configuration, database connectivity, migration head, and required tables without calling a model
+provider or exposing database errors.
 
 The HTTP boundary includes bounded request IDs, structured JSON logging, sanitized errors, explicit
 CORS and trusted-host settings, graceful provider and database disposal, request and upload limits,
@@ -204,7 +210,7 @@ security, privacy, legal, risk, or compliance program.
 
 ## Current limitations
 
-- There is no frontend yet and no live cloud deployment.
+- There is no live cloud deployment; the V8C interface is locally and CI validated.
 - Full tenant isolation, tenant-aware authorization, quotas, and data partitioning are not present.
 - OCR and image-only PDF ingestion are not supported; neither are Excel or PowerPoint ingestion.
 - There are no external enterprise connectors for document stores, ticketing, messaging, or GRC.
@@ -215,8 +221,6 @@ security, privacy, legal, risk, or compliance program.
 
 ## Next stages
 
-- **V8C — Enterprise Product UI:** build the authenticated interface for assessments, evidence,
-  runtime decisions, and human review without weakening the existing backend boundaries.
 - **V8D — Deployment, enterprise integration, and portfolio hardening:** add a real cloud deployment,
   production identity integration, managed secrets and observability, enterprise connectors, and
   operational hardening supported by deployment evidence.

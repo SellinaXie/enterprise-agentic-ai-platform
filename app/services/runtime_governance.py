@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from app.agents.models import (
     AgentTraceEventType,
     AssessmentExecutionMetadata,
@@ -50,6 +52,7 @@ from app.runtime.models import (
 )
 from app.runtime.telemetry import build_operational_telemetry
 from app.schemas.assessment import AssessmentResult
+from app.schemas.product import ReviewCandidateResponse
 
 
 class AssessmentLifecycleRepository(Protocol):
@@ -239,6 +242,27 @@ class RuntimeGovernanceService:
     def list_reviews(self, assessment_id: UUID) -> list[HumanReviewRecord]:
         self._required_assessment(assessment_id)
         return self._reviews.list_review_events(assessment_id)
+
+    def get_review_candidate(self, assessment_id: UUID) -> ReviewCandidateResponse:
+        """Return the exact validated candidate across the reviewer-only API boundary."""
+        self._required_assessment(assessment_id)
+        state = self._required_state(assessment_id)
+        if state.candidate_result is None:
+            raise PersistenceError
+        try:
+            result = AssessmentResult.model_validate(state.candidate_result)
+        except ValidationError as exc:
+            raise PersistenceError from exc
+        return ReviewCandidateResponse(
+            assessment_id=assessment_id,
+            result=result,
+            execution=state.candidate_execution,
+            gate_result=state.gate_result,
+            review_status=state.review_status,
+            telemetry=state.telemetry,
+            revision_count=state.revision_count,
+            max_revisions=state.max_revisions,
+        )
 
     def approve(
         self,

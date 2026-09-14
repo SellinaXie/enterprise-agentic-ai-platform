@@ -1,9 +1,55 @@
 # Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V8B backend for grounded enterprise AI architecture assessments. V8B preserves
-the complete V1-V8A implementation and adds explicit model-provider contracts, OpenAI and
-Anthropic structured-reasoning adapters, independent OpenAI embeddings, signed-JWT identity,
-role-based review controls, and authenticated audit attribution.
+Production-minded V8C platform for grounded enterprise AI architecture assessments. V8C preserves
+the V1-V8B intelligence, governance, provider, and identity boundaries and adds an authenticated
+enterprise product interface for assessments, evidence, runtime decisions, evaluations, operations,
+and human review.
+
+## V8C Enterprise Product Interface
+
+The `frontend/` workspace is a Next.js, React, and TypeScript application over the existing FastAPI
+contracts. It does not duplicate scoring, orchestration, risk-gate, or authorization rules in the
+browser. Compact product read endpoints expose the authenticated principal, paginated assessment
+summaries, a reviewer-only pending queue, and the existing deterministic V7A/V7B aggregates.
+
+The interface includes:
+
+- a portfolio dashboard and filterable assessment register;
+- assessment creation plus the existing bounded PDF, DOCX, text, and Markdown ingestion path;
+- architecture, risks, governance, evidence, provenance, execution trace, runtime telemetry, and
+  risk-gate detail views;
+- reviewer/admin-only candidate inspection and approve, reject, or bounded-revision actions;
+- deterministic synthetic evaluation comparisons and an operations view for safe runtime signals.
+
+For local frontend development, start the API on port 8000 and then run:
+
+```bash
+cd frontend
+cp .env.example .env.local
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000`. When authentication is enabled, the login screen accepts a signed
+development JWT for the configured issuer and audience. The token is kept in tab-scoped
+`sessionStorage`; it is never embedded in the bundle, persisted by the backend, or logged. With
+`AUTH_ENABLED=false`, the backend's existing development principal is used automatically.
+
+Run the frontend quality gates with:
+
+```bash
+cd frontend
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+`docker compose up --build --detach` now starts PostgreSQL, migrations, the API, and the frontend on
+ports 5432, 8000, and 3000 by default. `FRONTEND_PORT` changes the host frontend port. The Next.js
+server proxies `/backend/*` to the internal API, so the browser never needs a container-only API
+hostname. See [the frontend architecture](docs/architecture/frontend.md) for trust boundaries and
+extension guidance.
 
 ## V8B Platform Portability and Identity
 
@@ -158,7 +204,7 @@ No live provider call is required.
 
 V8B is a production-minded reference implementation, not certification for regulated production
 use and not a substitute for organizational security/compliance controls. External OIDC/JWKS,
-ABAC, SSO provisioning, tenant isolation, frontend, cloud deployment, managed secrets, backup
+ABAC, SSO provisioning, tenant isolation, cloud deployment, managed secrets, backup
 automation, and external observability remain deferred.
 
 ## Runtime Reliability & Risk Controls
@@ -1142,5 +1188,5 @@ remains deferred until a concrete interoperability use case exists.
 The V6.5 ingestion limitations remain: scanned/image-only PDFs need OCR; file ingestion is
 synchronous and memory-bounded; and legacy Word, spreadsheets, presentations, image understanding,
 archive ingestion, web crawling, and external enterprise connectors are not implemented.
-Malware scanning, object storage, queues, hosted deployment, managed OIDC/JWKS, tenant isolation,
-and frontend UI remain deferred beyond V8B.
+V8C supplies the local enterprise product interface. Malware scanning, object storage, queues,
+hosted deployment, managed OIDC/JWKS, and tenant isolation remain deferred to V8D or later.

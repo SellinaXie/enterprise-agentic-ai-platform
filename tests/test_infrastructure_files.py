@@ -52,6 +52,22 @@ def test_ci_requires_real_postgres_regressions_and_container_smoke() -> None:
     assert "python -m app.evaluation.runner --all" in workflow
     assert "python -m app.evaluation.assessment.runner --all" in workflow
     assert "docker build --target runtime" in workflow
-    assert "docker compose up --build --detach postgres migrate api" in workflow
+    assert "docker compose up --build --detach postgres migrate api frontend" in workflow
+    assert "npm run typecheck" in workflow
+    assert "npm test" in workflow
+    assert "npm run build" in workflow
     assert 'PROVIDER_REQUIRED: "false"' not in workflow.split("jobs:", maxsplit=1)[0]
     assert "continue-on-error" not in workflow
+
+
+def test_frontend_container_is_non_root_and_compose_connected() -> None:
+    dockerfile = (ROOT / "frontend/Dockerfile").read_text()
+    compose = (ROOT / "compose.yaml").read_text()
+
+    assert "FROM node:24.21.0-bookworm-slim" in dockerfile
+    assert "USER app" in dockerfile
+    assert 'CMD ["node", "server.js"]' in dockerfile
+    assert "API_INTERNAL_URL=http://api:8000" in dockerfile
+    assert "frontend:" in compose
+    assert "context: ./frontend" in compose
+    assert "FRONTEND_PORT" in compose

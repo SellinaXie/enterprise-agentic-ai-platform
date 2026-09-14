@@ -16,6 +16,7 @@ from app.runtime.models import (
 )
 from app.schemas.assessment import AssessmentRequest, AssessmentResponse
 from app.schemas.errors import ErrorResponse
+from app.schemas.product import ReviewCandidateResponse
 from app.services.assessments import AssessmentService
 from app.services.runtime_governance import RuntimeGovernanceService
 
@@ -96,6 +97,20 @@ def list_reviews(
     _: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
 ) -> list[HumanReviewRecord]:
     return service.list_reviews(assessment_id)
+
+
+@router.get(
+    "/{assessment_id}/review-candidate",
+    response_model=ReviewCandidateResponse,
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+    summary="Retrieve the persisted candidate for authenticated human review",
+)
+def get_review_candidate(
+    assessment_id: UUID,
+    service: Annotated[RuntimeGovernanceService, Depends(get_runtime_governance_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
+) -> ReviewCandidateResponse:
+    return service.get_review_candidate(assessment_id)
 
 
 @router.post(

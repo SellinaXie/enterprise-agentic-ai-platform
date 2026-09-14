@@ -219,6 +219,18 @@ def test_analyst_cannot_approve_review() -> None:
     assert response.json()["request_id"] == "forbidden-1"
 
 
+def test_analyst_cannot_read_persisted_review_candidate() -> None:
+    application = create_app(_settings())
+    application.dependency_overrides[get_runtime_governance_service] = GovernanceServiceStub
+    with TestClient(application) as client:
+        response = client.get(
+            f"/api/v1/assessments/{uuid4()}/review-candidate",
+            headers={"Authorization": f"Bearer {_token(roles=['analyst'])}"},
+        )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "permission_denied"
+
+
 @pytest.mark.parametrize("role", ["reviewer", "admin"])
 def test_reviewer_actions_use_authenticated_principal(role: str) -> None:
     service = GovernanceServiceStub()

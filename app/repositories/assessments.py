@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models.assessment import AssessmentModel, utc_now
@@ -86,6 +87,41 @@ class AssessmentRepository:
         """Return an assessment domain record when it exists."""
         model = self._session.get(AssessmentModel, assessment_id)
         return _to_record(model) if model is not None else None
+
+    def list_page(
+        self,
+        *,
+        status: AssessmentStatus | None,
+        offset: int,
+        limit: int,
+    ) -> list[PersistedAssessment]:
+        """Return one bounded newest-first page for product read views."""
+        statement = select(AssessmentModel)
+        if status is not None:
+            statement = statement.where(AssessmentModel.status == status)
+        statement = (
+            statement.order_by(AssessmentModel.created_at.desc(), AssessmentModel.id)
+            .offset(offset)
+            .limit(limit)
+        )
+        return [_to_record(model) for model in self._session.scalars(statement).all()]
+
+    def count(self, *, status: AssessmentStatus | None) -> int:
+        """Count assessments, optionally constrained to one lifecycle state."""
+        statement = select(func.count()).select_from(AssessmentModel)
+        if status is not None:
+            statement = statement.where(AssessmentModel.status == status)
+        return int(self._session.scalar(statement) or 0)
+
+    def count_by_status(self) -> dict[str, int]:
+        """Return lifecycle totals without loading assessment payloads."""
+        rows = self._session.execute(
+            select(AssessmentModel.status, func.count()).group_by(AssessmentModel.status)
+        ).all()
+        return {
+            status.value if isinstance(status, AssessmentStatus) else str(status): int(count)
+            for status, count in rows
+        }
 
     def mark_processing(self, assessment_id: UUID) -> PersistedAssessment | None:
         """Move a pending assessment to processing."""

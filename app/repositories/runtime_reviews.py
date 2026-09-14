@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models.assessment import utc_now
@@ -103,6 +103,35 @@ class RuntimeReviewRepository:
             statement = statement.with_for_update()
         model = self._session.scalars(statement).one_or_none()
         return _state_from_model(model) if model is not None else None
+
+    def get_states(self, assessment_ids: list[UUID]) -> dict[UUID, RuntimeAssessmentState]:
+        """Return current checkpoints for one bounded assessment page."""
+        if not assessment_ids:
+            return {}
+        models = self._session.scalars(
+            select(AssessmentRuntimeStateModel).where(
+                AssessmentRuntimeStateModel.assessment_id.in_(assessment_ids)
+            )
+        ).all()
+        return {model.assessment_id: _state_from_model(model) for model in models}
+
+    def count_by_gate_decision(self) -> dict[str, int]:
+        """Return runtime-decision totals for the executive dashboard."""
+        rows = self._session.execute(
+            select(AssessmentRuntimeStateModel.gate_decision, func.count()).group_by(
+                AssessmentRuntimeStateModel.gate_decision
+            )
+        ).all()
+        return {str(decision): int(count) for decision, count in rows}
+
+    def count_by_review_status(self) -> dict[str, int]:
+        """Return human-review totals for the executive dashboard."""
+        rows = self._session.execute(
+            select(AssessmentRuntimeStateModel.review_status, func.count()).group_by(
+                AssessmentRuntimeStateModel.review_status
+            )
+        ).all()
+        return {str(review_status): int(count) for review_status, count in rows}
 
     def add_review_event(
         self,

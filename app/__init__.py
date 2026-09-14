@@ -1,3 +1,3 @@
 """Enterprise AI Architecture & Risk Intelligence Platform backend."""
 
-__version__ = "0.8.0rc3"
+__version__ = "0.8.0rc4"

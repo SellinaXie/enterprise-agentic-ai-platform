@@ -31,3 +31,7 @@ build
 *.sqlite3
 outputs
 work
+frontend/node_modules
+frontend/.next
+frontend/coverage
+frontend/*.tsbuildinfo

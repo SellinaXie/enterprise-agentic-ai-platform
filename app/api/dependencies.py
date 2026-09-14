@@ -42,6 +42,7 @@ from app.runtime.metrics import RuntimeMetricsRecorder
 from app.runtime.models import RuntimeRiskPolicy
 from app.services.assessments import AssessmentGenerator, AssessmentService
 from app.services.llm import ProviderAssessmentGenerator
+from app.services.product_read import ProductReadService
 from app.services.runtime_governance import RuntimeGovernanceService
 from app.tools.knowledge import build_knowledge_tool_registry
 from app.tools.permissions import AgentToolPermissions
@@ -80,6 +81,14 @@ def get_runtime_review_repository(
 ) -> RuntimeReviewRepository:
     """Build the durable V7C checkpoint and audit repository."""
     return RuntimeReviewRepository(session)
+
+
+def get_product_read_service(
+    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    reviews: Annotated[RuntimeReviewRepository, Depends(get_runtime_review_repository)],
+) -> ProductReadService:
+    """Build the bounded read model used by the V8C interface."""
+    return ProductReadService(assessments=assessments, runtime=reviews)
 
 
 def get_runtime_governance_service(

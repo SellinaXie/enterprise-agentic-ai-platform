@@ -13,10 +13,34 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.12"
+  NODE_VERSION: "24.21.0"
   APP_ENV: test
   EVALUATION_LLM_JUDGE_ENABLED: "false"
 
 jobs:
+  frontend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci
+      - name: Lint frontend
+        run: npm run lint
+      - name: Type-check frontend
+        run: npm run typecheck
+      - name: Test frontend
+        run: npm test
+      - name: Build production frontend
+        run: npm run build
+
   quality-and-regression:
     runs-on: ubuntu-latest
     steps:
@@ -42,7 +66,7 @@ jobs:
       - name: V7B deterministic quality regression
         run: python -m app.evaluation.assessment.runner --all --output-dir /tmp/v7b-evaluation
       - name: OpenAPI regression
-        run: python -c "from app.main import create_app; paths=create_app().openapi()['paths']; assert len(paths) >= 14 and '/readiness' in paths"
+        run: python -c "from app.main import create_app; paths=create_app().openapi()['paths']; assert len(paths) >= 18 and '/readiness' in paths and '/api/v1/session' in paths and '/api/v1/evaluation/summary' in paths"
       - name: Alembic history
         run: alembic history
       - name: Secret scan
@@ -93,11 +117,12 @@ jobs:
       - name: Build production image
         run: docker build --target runtime --tag enterprise-ai-api:ci .
       - name: Start production-like stack
-        run: docker compose up --build --detach postgres migrate api
-      - name: Health and readiness smoke
+        run: docker compose up --build --detach postgres migrate api frontend
+      - name: API and frontend smoke
         run: |
           for attempt in $(seq 1 60); do
-            if curl --fail --silent http://127.0.0.1:8000/readiness >/tmp/readiness.json; then
+            if curl --fail --silent http://127.0.0.1:8000/readiness >/tmp/readiness.json && \
+               curl --fail --silent http://127.0.0.1:3000 >/tmp/frontend.html; then
               break
             fi
             if [ "$attempt" -eq 60 ]; then
@@ -108,6 +133,7 @@ jobs:
           done
           curl --fail --silent http://127.0.0.1:8000/health
           python -c "import json; payload=json.load(open('/tmp/readiness.json')); assert payload['status'] == 'ready'"
+          grep --quiet "Enterprise AI" /tmp/frontend.html
       - name: Readiness fails safely without its database
         run: |
           docker compose stop postgres
