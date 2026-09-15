@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -31,6 +32,7 @@ from app.identity.models import AuthenticatedPrincipal
 from app.models.assessment import AssessmentStatus, RiskSeverity
 from app.models.knowledge import RetrievedEvidence
 from app.models.persisted_assessment import PersistedAssessment
+from app.observability.exporters import NoOpTelemetryExporter, OperationalTelemetryExporter
 from app.repositories.runtime_reviews import RuntimeReviewRepository
 from app.runtime.gate import RuntimeRiskGate
 from app.runtime.metrics import RuntimeMetricsRecorder
@@ -42,6 +44,7 @@ from app.runtime.models import (
     HumanReviewRequest,
     HumanReviewStatus,
     OperationalTelemetry,
+    QualityGateResult,
     QualityGateSignals,
     RuntimeAssessmentState,
     RuntimeRiskDecision,
@@ -53,6 +56,8 @@ from app.runtime.models import (
 from app.runtime.telemetry import build_operational_telemetry
 from app.schemas.assessment import AssessmentResult
 from app.schemas.product import ReviewCandidateResponse
+
+logger = logging.getLogger(__name__)
 
 
 class AssessmentLifecycleRepository(Protocol):
@@ -103,6 +108,7 @@ class RuntimeGovernanceService:
         input_cost_per_million: float | None = None,
         output_cost_per_million: float | None = None,
         metrics: RuntimeMetricsRecorder | None = None,
+        telemetry_exporter: OperationalTelemetryExporter | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._assessments = assessments
@@ -111,6 +117,7 @@ class RuntimeGovernanceService:
         self._input_cost_per_million = input_cost_per_million
         self._output_cost_per_million = output_cost_per_million
         self._metrics = metrics
+        self._telemetry_exporter = telemetry_exporter or NoOpTelemetryExporter()
         self._clock = clock
 
     def process_candidate(
@@ -226,6 +233,7 @@ class RuntimeGovernanceService:
                 reason_codes=gate_result.reason_codes,
                 revision_number=revision_count,
             )
+        self._export_telemetry(assessment_id, telemetry, gate_result)
         return record
 
     def get_runtime_status(self, assessment_id: UUID) -> RuntimeStatusResponse:
@@ -291,6 +299,7 @@ class RuntimeGovernanceService:
             principal=principal,
         )
         self._reviews.commit()
+        self._export_telemetry(assessment_id, telemetry, state.gate_result)
         return self._decision(state, HumanReviewAction.APPROVED, record.status)
 
     def reject(
@@ -325,6 +334,7 @@ class RuntimeGovernanceService:
             principal=principal,
         )
         self._reviews.commit()
+        self._export_telemetry(assessment_id, telemetry, state.gate_result)
         return self._decision(state, HumanReviewAction.REJECTED, record.status)
 
     def request_revision(
@@ -367,6 +377,7 @@ class RuntimeGovernanceService:
             **self._actor_fields(principal),
         )
         self._reviews.commit()
+        self._export_telemetry(assessment_id, telemetry, state.gate_result)
         return HumanReviewDecision(
             assessment_id=assessment_id,
             action=HumanReviewAction.REVISION_REQUESTED,
@@ -459,6 +470,7 @@ class RuntimeGovernanceService:
             revision_number=state.revision_count,
         )
         self._reviews.commit()
+        self._export_telemetry(assessment_id, merged_telemetry, new_state.gate_result)
         return record
 
     @staticmethod
@@ -526,6 +538,24 @@ class RuntimeGovernanceService:
         if record is None:
             raise AssessmentNotFoundError
         return record
+
+    def _export_telemetry(
+        self,
+        assessment_id: UUID,
+        telemetry: OperationalTelemetry,
+        gate_result: QualityGateResult,
+    ) -> None:
+        try:
+            self._telemetry_exporter.export(
+                assessment_id=assessment_id,
+                telemetry=telemetry,
+                gate_result=gate_result,
+            )
+        except Exception as exc:
+            logger.warning(
+                "operational_telemetry_export_failed",
+                extra={"failure_type": type(exc).__name__},
+            )
 
     def _required_state(
         self, assessment_id: UUID, *, for_update: bool = False

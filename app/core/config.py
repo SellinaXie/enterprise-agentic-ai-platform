@@ -127,9 +127,29 @@ class Settings(BaseSettings):
             "AUTH_JWT_VERIFICATION_KEY", "AUTH_JWT_SECRET", "AUTH_JWT_PUBLIC_KEY"
         ),
     )
+    auth_jwks_url: str | None = None
+    auth_jwks_cache_seconds: int = Field(default=300, ge=60, le=86_400)
+    auth_jwks_timeout_seconds: int = Field(default=5, ge=1, le=30)
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str | None = None
     auth_jwt_leeway_seconds: int = Field(default=30, ge=0, le=300)
+
+    observability_exporter: Literal["none", "otlp"] = "none"
+    otel_exporter_otlp_endpoint: str | None = None
+    otel_service_name: str = Field(
+        default="enterprise-agentic-ai-platform",
+        min_length=1,
+        max_length=100,
+    )
+    otel_export_timeout_seconds: int = Field(default=5, ge=1, le=30)
+
+    policy_repository_enabled: bool = False
+    policy_repository_base_url: str | None = None
+    policy_repository_token: SecretStr | None = None
+    policy_repository_documents_path: str = "/v1/documents"
+    policy_repository_timeout_seconds: int = Field(default=10, ge=1, le=30)
+    policy_repository_max_documents: int = Field(default=100, ge=1, le=500)
+    policy_repository_max_response_mb: int = Field(default=5, ge=1, le=25)
 
     @property
     def openai_model(self) -> str:
@@ -187,6 +207,36 @@ class Settings(BaseSettings):
                 "must be configured together"
             )
 
+        if self.observability_exporter == "otlp" and not self.otel_exporter_otlp_endpoint:
+            raise ValueError("OTEL_EXPORTER_OTLP_ENDPOINT is required for the OTLP exporter")
+        if self.otel_exporter_otlp_endpoint:
+            parsed_otel = urlsplit(self.otel_exporter_otlp_endpoint)
+            if parsed_otel.scheme not in {"http", "https"} or not parsed_otel.netloc:
+                raise ValueError("OTEL_EXPORTER_OTLP_ENDPOINT must be a valid HTTP(S) URL")
+        if self.policy_repository_enabled:
+            if (
+                not self.policy_repository_base_url
+                or self.policy_repository_token is None
+                or not self.policy_repository_token.get_secret_value().strip()
+            ):
+                raise ValueError(
+                    "POLICY_REPOSITORY_BASE_URL and POLICY_REPOSITORY_TOKEN are required "
+                    "when the connector is enabled"
+                )
+            parsed_repository = urlsplit(self.policy_repository_base_url)
+            if parsed_repository.scheme not in {"http", "https"} or not parsed_repository.netloc:
+                raise ValueError("POLICY_REPOSITORY_BASE_URL must be a valid HTTP(S) URL")
+            parsed_path = urlsplit(self.policy_repository_documents_path)
+            if (
+                not self.policy_repository_documents_path.startswith("/")
+                or self.policy_repository_documents_path.startswith("//")
+                or parsed_path.scheme
+                or parsed_path.netloc
+                or parsed_path.query
+                or parsed_path.fragment
+            ):
+                raise ValueError("POLICY_REPOSITORY_DOCUMENTS_PATH must be one absolute path")
+
         for origin in self.parsed_cors_allowed_origins:
             parsed = urlsplit(origin)
             if origin == "*":
@@ -201,8 +251,19 @@ class Settings(BaseSettings):
         return self
 
     def _validate_auth_settings(self) -> None:
-        if self.auth_jwt_verification_key is None:
-            raise ValueError("AUTH_JWT_VERIFICATION_KEY is required when authentication is enabled")
+        if self.auth_jwt_verification_key is None and not self.auth_jwks_url:
+            raise ValueError(
+                "AUTH_JWT_VERIFICATION_KEY or AUTH_JWKS_URL is required when "
+                "authentication is enabled"
+            )
+        if self.auth_jwt_verification_key is not None and self.auth_jwks_url:
+            raise ValueError("Configure only one of AUTH_JWT_VERIFICATION_KEY or AUTH_JWKS_URL")
+        if self.auth_jwks_url:
+            parsed_jwks = urlsplit(self.auth_jwks_url)
+            if parsed_jwks.scheme not in {"http", "https"} or not parsed_jwks.netloc:
+                raise ValueError("AUTH_JWKS_URL must be a valid HTTP(S) URL")
+            if self.auth_jwt_algorithm != "RS256":
+                raise ValueError("AUTH_JWKS_URL requires AUTH_JWT_ALGORITHM=RS256")
         if not self.auth_jwt_issuer or not self.auth_jwt_audience:
             raise ValueError(
                 "AUTH_JWT_ISSUER and AUTH_JWT_AUDIENCE are required when authentication is enabled"
@@ -228,6 +289,11 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL must use PostgreSQL in production")
         if any(marker in database_url.casefold() for marker in UNSAFE_PLACEHOLDER_MARKERS):
             raise ValueError("DATABASE_URL contains an unsafe placeholder in production")
+
+        if self.policy_repository_enabled:
+            assert self.policy_repository_base_url is not None
+            if urlsplit(self.policy_repository_base_url).scheme != "https":
+                raise ValueError("POLICY_REPOSITORY_BASE_URL must use HTTPS in production")
 
         provider_needed = self.provider_required or any(
             (
@@ -260,12 +326,16 @@ class Settings(BaseSettings):
         if not self.auth_enabled:
             raise ValueError("AUTH_ENABLED must be true in production")
         self._validate_auth_settings()
-        assert self.auth_jwt_verification_key is not None
-        verification_key = self.auth_jwt_verification_key.get_secret_value().strip()
-        if len(verification_key) < 32 or any(
-            marker in verification_key.casefold() for marker in UNSAFE_PLACEHOLDER_MARKERS
-        ):
-            raise ValueError("AUTH_JWT_VERIFICATION_KEY is unsafe for production")
+        if self.auth_jwks_url:
+            if urlsplit(self.auth_jwks_url).scheme != "https":
+                raise ValueError("AUTH_JWKS_URL must use HTTPS in production")
+        else:
+            assert self.auth_jwt_verification_key is not None
+            verification_key = self.auth_jwt_verification_key.get_secret_value().strip()
+            if len(verification_key) < 32 or any(
+                marker in verification_key.casefold() for marker in UNSAFE_PLACEHOLDER_MARKERS
+            ):
+                raise ValueError("AUTH_JWT_VERIFICATION_KEY is unsafe for production")
 
 
 @lru_cache

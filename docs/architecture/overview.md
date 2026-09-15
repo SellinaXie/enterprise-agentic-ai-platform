@@ -17,10 +17,10 @@ than becoming the default.
 ## End-to-end architecture
 
 ```text
-Enterprise documents + business context
+Policy repository + enterprise documents + business context
                    |
                    v
-      Authenticated Enterprise Product UI
+      Authenticated Enterprise Product UI (OIDC/JWKS)
                    |
                    v
        Validate, parse, normalize, chunk
@@ -43,6 +43,8 @@ Enterprise documents + business context
                     |
                     v
        V7A/V7B Evaluation + Runtime Telemetry
+                    |
+                    +----------> OTLP/HTTP Collector
                     |
                     v
         Central Deterministic Runtime Risk Gate
@@ -124,9 +126,10 @@ verified principal rather than client-supplied reviewer data.
   and embeddings use separate contracts because organizations may change reasoning providers while
   retaining a stable embedding model and vector index. OpenAI currently implements both contracts;
   Anthropic implements structured reasoning and tool selection, not embeddings.
-- **JWT and RBAC** establish a stateless identity boundary. Signed tokens are checked for algorithm,
-  signature, issuer, audience, expiry, subject, and known roles. Analysts can use protected APIs;
-  reviewer and admin roles control review operations. Health and readiness remain public.
+- **OIDC/JWKS, JWT, and RBAC** establish a stateless identity boundary. Signed tokens are checked
+  for algorithm, signature, issuer, audience, expiry, subject, and known roles. Cached JWKS keys
+  support external RS256 identity; a fixed key remains available for controlled environments.
+  Analysts can use protected APIs; reviewer and admin roles control review operations.
 - **Docker and CI** make the production-like topology and validation repeatable. Containers separate
   PostgreSQL, migrations, and the non-root API process. GitHub Actions verifies linting, formatting,
   compilation, dependencies, deterministic regressions, real PostgreSQL/pgvector behavior,
@@ -172,7 +175,9 @@ review actions.
 
 GitHub Actions runs network-free unit, workflow, and evaluation regressions alongside a real
 PostgreSQL/pgvector integration suite and container smoke tests. Alembic validates both an empty
-database upgrade and the current migration downgrade/upgrade boundary.
+database upgrade and the current migration downgrade/upgrade boundary. A Render Blueprint defines
+the two web services, private PostgreSQL 16 database, and pre-deploy migration. OTLP/HTTP export is
+optional and content-free; the policy repository is the sole read-only enterprise connector.
 
 ## Evaluation strategy
 
@@ -210,17 +215,18 @@ security, privacy, legal, risk, or compliance program.
 
 ## Current limitations
 
-- There is no live cloud deployment; the V8C interface is locally and CI validated.
+- The deployment manifest is present, but no live cloud URL or measured cloud SLO exists yet.
 - Full tenant isolation, tenant-aware authorization, quotas, and data partitioning are not present.
 - OCR and image-only PDF ingestion are not supported; neither are Excel or PowerPoint ingestion.
-- There are no external enterprise connectors for document stores, ticketing, messaging, or GRC.
-- Production SSO, enterprise IdP discovery/JWKS rotation, provisioning, and revocation are deferred.
+- Only one generic HTTPS policy repository connector exists; Google Drive, SharePoint, ticketing,
+  messaging, and GRC connectors are not implemented.
+- OIDC/JWKS token verification is present, but browser authorization-code login, SCIM provisioning,
+  enterprise IdP lifecycle administration, and revocation integration are not.
 - There is no external observability SaaS, managed alerting, or production incident integration.
 - Live-provider architecture, risk, and retrieval quality has not been benchmarked; current
   benchmark results use deterministic synthetic fixtures.
 
-## Next stages
+## Scope status
 
-- **V8D — Deployment, enterprise integration, and portfolio hardening:** add a real cloud deployment,
-  production identity integration, managed secrets and observability, enterprise connectors, and
-  operational hardening supported by deployment evidence.
+V8D is the final planned portfolio-hardening stage. Going live now requires account-level cloud,
+database-plan, identity-provider, DNS, and secret decisions. There is no implied V9 scope.

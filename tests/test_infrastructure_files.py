@@ -11,7 +11,8 @@ def test_runtime_container_is_python_312_non_root_and_health_checked() -> None:
     assert "FROM python:3.12.12-slim-bookworm AS base" in dockerfile
     assert "USER app" in dockerfile
     assert "HEALTHCHECK" in dockerfile
-    assert '"app.main:app"' in dockerfile
+    assert 'CMD ["python", "-m", "app.server"]' in dockerfile
+    assert 'os.getenv(\\"PORT\\", \\"8000\\")' in dockerfile
     assert "--reload" not in dockerfile
     assert "COPY .env" not in dockerfile
 
@@ -66,8 +67,52 @@ def test_frontend_container_is_non_root_and_compose_connected() -> None:
 
     assert "FROM node:24.21.0-bookworm-slim" in dockerfile
     assert "USER app" in dockerfile
+    assert "HEALTHCHECK" in dockerfile
+    assert "process.env.PORT || '3000'" in dockerfile
     assert 'CMD ["node", "server.js"]' in dockerfile
-    assert "API_INTERNAL_URL=http://api:8000" in dockerfile
+    assert "ARG API_INTERNAL_URL" in dockerfile
+    assert "API_INTERNAL_URL: http://api:8000" in compose
     assert "frontend:" in compose
     assert "context: ./frontend" in compose
     assert "FRONTEND_PORT" in compose
+    assert "condition: service_healthy" in compose
+
+
+def test_render_blueprint_connects_private_services_and_managed_postgres() -> None:
+    blueprint = (ROOT / "render.yaml").read_text()
+
+    assert "enterprise-ai-api" in blueprint
+    assert "enterprise-ai-frontend" in blueprint
+    assert "enterprise-ai-postgres" in blueprint
+    assert "preDeployCommand: alembic upgrade head" in blueprint
+    assert blueprint.count("autoDeployTrigger: checksPass") == 2
+    assert "property: connectionString" in blueprint
+    assert "property: hostport" in blueprint
+    assert 'postgresMajorVersion: "16"' in blueprint
+    assert "ipAllowList: []" in blueprint
+    assert "AUTH_JWKS_URL" in blueprint
+    assert "OPENAI_API_KEY" in blueprint
+    assert "sync: false" in blueprint
+
+
+def test_production_deploy_is_manual_protected_and_secret_backed() -> None:
+    workflow = (ROOT / ".github/workflows/deploy.yml").read_text()
+
+    assert "workflow_dispatch:" in workflow
+    assert "environment: production" in workflow
+    assert "secrets.RENDER_DEPLOY_HOOK_URL" in workflow
+    assert "secrets.DEPLOYMENT_HEALTH_URL" in workflow
+    assert "pull_request:" not in workflow
+    assert "push:" not in workflow
+
+
+def test_database_recovery_wrappers_require_explicit_environment_inputs() -> None:
+    backup = (ROOT / "scripts/backup_postgres.sh").read_text()
+    restore = (ROOT / "scripts/restore_postgres.sh").read_text()
+
+    assert "BACKUP_DATABASE_URL" in backup
+    assert "pg_restore --list" in backup
+    assert 'ALLOW_DATABASE_RESTORE:-}" != "true"' in restore
+    assert "RESTORE_DATABASE_URL" in restore
+    assert "--exit-on-error" in restore
+    assert "--clean" not in restore

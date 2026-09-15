@@ -115,3 +115,85 @@ def test_graph_bounds_are_validated(name: str, value: float) -> None:
 def test_file_ingestion_bounds_are_validated(name: str, value: int) -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **{name: value})
+
+
+def test_oidc_jwks_configuration_supports_external_rs256_identity() -> None:
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        AUTH_ENABLED=True,
+        AUTH_JWT_ALGORITHM="RS256",
+        AUTH_JWKS_URL="https://identity.example.test/.well-known/jwks.json",
+        AUTH_JWT_ISSUER="https://identity.example.test/",
+        AUTH_JWT_AUDIENCE="enterprise-agentic-ai-platform",
+        PROVIDER_REQUIRED=False,
+    )
+
+    assert settings.auth_jwks_url is not None
+    assert settings.auth_jwt_verification_key is None
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"AUTH_JWT_ALGORITHM": "HS256"}, "AUTH_JWKS_URL requires"),
+        ({"AUTH_JWKS_URL": "not-a-url"}, "valid HTTP"),
+    ],
+)
+def test_invalid_oidc_jwks_configuration_is_rejected(
+    overrides: dict[str, object], message: str
+) -> None:
+    values: dict[str, object] = {
+        "_env_file": None,
+        "APP_ENV": "test",
+        "AUTH_ENABLED": True,
+        "AUTH_JWT_ALGORITHM": "RS256",
+        "AUTH_JWKS_URL": "https://identity.example.test/.well-known/jwks.json",
+        "AUTH_JWT_ISSUER": "https://identity.example.test/",
+        "AUTH_JWT_AUDIENCE": "enterprise-agentic-ai-platform",
+        "PROVIDER_REQUIRED": False,
+    }
+    values.update(overrides)
+    with pytest.raises(ValueError, match=message):
+        Settings(**values)
+
+
+def test_otlp_and_policy_connector_require_complete_bounded_configuration() -> None:
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="test",
+        PROVIDER_REQUIRED=False,
+        OBSERVABILITY_EXPORTER="otlp",
+        OTEL_EXPORTER_OTLP_ENDPOINT="https://collector.example.test/v1/traces",
+        POLICY_REPOSITORY_ENABLED=True,
+        POLICY_REPOSITORY_BASE_URL="https://policies.example.test",
+        POLICY_REPOSITORY_TOKEN="synthetic-read-only-token",
+    )
+
+    assert settings.observability_exporter == "otlp"
+    assert settings.policy_repository_enabled is True
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"OBSERVABILITY_EXPORTER": "otlp"},
+        {"POLICY_REPOSITORY_ENABLED": True},
+        {
+            "POLICY_REPOSITORY_ENABLED": True,
+            "POLICY_REPOSITORY_BASE_URL": "invalid",
+            "POLICY_REPOSITORY_TOKEN": "synthetic",
+        },
+        {
+            "POLICY_REPOSITORY_ENABLED": True,
+            "POLICY_REPOSITORY_BASE_URL": "https://policies.example.test",
+            "POLICY_REPOSITORY_TOKEN": "synthetic",
+            "POLICY_REPOSITORY_DOCUMENTS_PATH": "//untrusted.example.test/documents",
+        },
+    ],
+)
+def test_incomplete_external_integration_configuration_fails_closed(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, APP_ENV="test", PROVIDER_REQUIRED=False, **overrides)

@@ -24,6 +24,8 @@ def get_database_url(settings: Settings) -> str:
     database_url = settings.database_url.get_secret_value().strip()
     if not database_url:
         raise DatabaseNotConfiguredError
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
     return database_url
 
 

@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AuthenticationRequiredError, PermissionDeniedError
 from app.identity.models import AuthenticatedPrincipal, Role
-from app.identity.tokens import LocalJWTVerifier, TokenVerifier
+from app.identity.tokens import LocalJWTVerifier, OIDCJWKSVerifier, TokenVerifier
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -18,8 +18,19 @@ def get_token_verifier(
 ) -> TokenVerifier | None:
     if not settings.auth_enabled:
         return None
+    if settings.auth_jwt_issuer is None or settings.auth_jwt_audience is None:
+        raise AuthenticationRequiredError
+    if settings.auth_jwks_url:
+        return OIDCJWKSVerifier(
+            jwks_url=settings.auth_jwks_url,
+            issuer=settings.auth_jwt_issuer,
+            audience=settings.auth_jwt_audience,
+            leeway_seconds=settings.auth_jwt_leeway_seconds,
+            cache_seconds=settings.auth_jwks_cache_seconds,
+            timeout_seconds=settings.auth_jwks_timeout_seconds,
+        )
     key = settings.auth_jwt_verification_key
-    if key is None or settings.auth_jwt_issuer is None or settings.auth_jwt_audience is None:
+    if key is None:
         raise AuthenticationRequiredError
     return LocalJWTVerifier(
         verification_key=key.get_secret_value(),

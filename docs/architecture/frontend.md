@@ -80,7 +80,9 @@ Frontend CI installs the exact lockfile and runs ESLint, TypeScript, Vitest, and
 build. Tests cover authenticated request behavior, correlation/error handling, role-aware navigation,
 confirmation before review mutation, and safe rendering of script-like or prompt-injection content.
 The Compose smoke job builds and starts the frontend with PostgreSQL, migrations, and FastAPI, then
-checks both API readiness and the rendered product shell.
+checks API readiness, frontend liveness, and the rendered product shell. Compose waits for the API
+healthcheck before starting the frontend, and the frontend container exposes its own network-free
+`GET /health` liveness check.
 
 The UI is responsive and keyboard-focusable, with semantic form labels and status text. It uses a
 small internal component system and no remote font, analytics, or component CDN, keeping the local
@@ -88,8 +90,9 @@ product deterministic and minimizing third-party surface area.
 
 ## Deliberate limitations
 
-V8C is not a deployment or identity program. It does not add production SSO/OIDC discovery, managed
-sessions, tenant isolation, cloud hosting, enterprise connectors, OCR, spreadsheet/presentation
-ingestion, background jobs, or external observability. Assessment creation remains synchronous.
-Live-provider quality is not implied by the deterministic evaluation screen. Those concerns remain
-V8D or later work and must preserve the backend trust boundaries described here.
+V8D adds deployable cloud manifests and backend OIDC/JWKS token verification, but the frontend still
+accepts an already issued bearer token; it does not implement an IdP authorization-code/PKCE login
+flow. Managed secret injection belongs to the hosting platform. Tenant isolation, OCR,
+spreadsheets, presentations, malware scanning, queues, and background jobs remain absent.
+Assessment creation remains synchronous, and future UI changes must preserve these backend trust
+boundaries. Live-provider quality is not implied by the deterministic evaluation screen.

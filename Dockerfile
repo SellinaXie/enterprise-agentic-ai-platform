@@ -15,6 +15,7 @@ RUN groupadd --gid 10001 app && \
 COPY pyproject.toml constraints.txt README.md ./
 COPY app ./app
 COPY alembic ./alembic
+COPY scripts ./scripts
 COPY alembic.ini ./
 
 RUN PIP_CONSTRAINT=/app/constraints.txt python -m pip install . && \
@@ -36,6 +37,6 @@ USER app
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).read()"]
+    CMD ["python", "-c", "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.getenv(\"PORT\", \"8000\")}/health', timeout=2).read()"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
+CMD ["python", "-m", "app.server"]

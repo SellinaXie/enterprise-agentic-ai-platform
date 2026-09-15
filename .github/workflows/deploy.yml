@@ -1,0 +1,30 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger protected Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          test -n "$RENDER_DEPLOY_HOOK_URL"
+          curl --fail --silent --show-error --request POST "$RENDER_DEPLOY_HOOK_URL"
+      - name: Verify public liveness endpoint
+        env:
+          DEPLOYMENT_HEALTH_URL: ${{ secrets.DEPLOYMENT_HEALTH_URL }}
+        run: |
+          test -n "$DEPLOYMENT_HEALTH_URL"
+          curl --fail --silent --show-error --retry 20 --retry-all-errors \
+            --retry-delay 15 "$DEPLOYMENT_HEALTH_URL"

@@ -1,4 +1,4 @@
-# Direct dependency versions validated for the V8B Python 3.12 build.
+# Direct dependency versions validated for the V8D Python 3.12 build.
 # Transitive dependencies remain governed by the compatible ranges in pyproject.toml.
 alembic==1.19.2
 anthropic==1.5.0
@@ -7,6 +7,9 @@ fastapi==0.141.1
 httpx==0.28.1
 langgraph==1.2.11
 openai==2.54.0
+opentelemetry-api==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
+opentelemetry-sdk==1.44.0
 pgvector==0.5.0
 psycopg==3.3.5
 psycopg-binary==3.3.5

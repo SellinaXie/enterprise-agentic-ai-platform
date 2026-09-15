@@ -1,44 +1,45 @@
-# Security Policy
+# Security policy
 
-## Project status
+## Reporting
 
-This repository is a production-minded portfolio and reference implementation. It is not a
-certified production service and does not replace an organization's security, privacy, risk, or
-compliance controls.
+Do not open a public issue for a suspected vulnerability or include credentials, customer data, or
+exploit details in logs/screenshots. Contact the repository owner privately through GitHub and
+include the affected revision, impact, minimal reproduction, and suggested mitigation. This
+portfolio repository does not advertise a guaranteed response SLA.
 
-V8B adds signed-JWT verification, typed principals, analyst/reviewer/admin authorization, and
-authenticated review audit attribution to the V8A container, configuration, logging,
-error-handling, and database foundations. It is not a complete enterprise identity platform:
-external OIDC/JWKS discovery and rotation, identity provisioning, revocation, tenant isolation,
-ABAC, managed-secret integration, deployment hardening, and continuous production monitoring are
-not implemented.
+## Supported scope
 
-## Reporting a vulnerability
+Security fixes target the current `main` branch. The platform is a reference implementation, not a
+hosted service or compliance certification. Deployers own threat modeling, data classification,
+identity provisioning, network controls, encryption/key management, dependency monitoring,
+retention, incident response, and regulatory review.
 
-Please report suspected vulnerabilities privately through GitHub's private vulnerability
-reporting feature when it is enabled for this repository. Otherwise, contact the repository owner
-through the contact method on their GitHub profile and ask for a private reporting channel before
-sharing technical details.
+## Built-in boundaries
 
-Do not include real credentials, API keys, client data, proprietary documents, regulated data, or
-working exploit payloads in a public issue. There is no claim of a staffed enterprise incident
-response team or guaranteed response time.
+Production requires PostgreSQL, authentication, explicit hosts/origins, and safe provider secrets.
+OIDC/JWKS tokens validate algorithm, issuer, audience, expiry, subject, and known roles. Reviewer
+identity comes from verified claims. Tools and loops are bounded; connector access is read-only and
+configured; telemetry excludes content; source provenance and runtime gates are persisted. The
+application does not store chain-of-thought.
 
-## Secrets and data
+Never commit `.env`, tokens, database dumps, private keys, production documents, screenshots with
+credentials, or provider responses containing sensitive data. Rotate any credential that may have
+entered Git history rather than merely deleting the file.
 
-Use environment variables or a deployment platform's secret injection. Never commit `.env`, real
-database passwords, provider keys, production documents, or customer assessment data. Rotate any
-credential immediately if it is accidentally disclosed.
+## Secrets, data, and verification
 
-Production configuration requires authentication, an explicit issuer/audience, and a non-placeholder
-JWT verification secret or public key. Never log or persist an Authorization header, bearer token,
-raw claims object, provider credential, prompt, source document, or embedding. The repository's
-conservative secret scan includes OpenAI-style keys, Anthropic-style keys, compact JWTs, private
-keys, and obvious password/secret assignments; it complements rather than replaces a managed
-secret scanner and repository history review.
+Inject secrets through environment variables or the deployment platform. Never log or persist an
+Authorization header, bearer token, raw claims object, provider credential, prompt, source
+document, model conversation, or embedding. The conservative repository scan checks common
+provider/GitHub/AWS token shapes, compact JWTs, private keys, and obvious credential assignments;
+it complements rather than replaces managed scanning and Git-history review.
 
-The local HS256 verifier is intended for controlled deployments and automated tests. Prefer a
-deployment-integrated asymmetric verification key for separated signing authority. V8B does not
-fetch remote keys, so operators must rotate configured keys through their deployment secret
-mechanism and coordinate token lifetimes. Unsigned tokens and algorithms other than the fixed
-configured algorithm are rejected.
+Prefer external RS256/JWKS identity for production signing-key rotation. Exactly one JWKS or fixed
+verification-key source may be configured. This application validates access tokens but does not
+issue tokens, manage users, implement SCIM, or provide tenant isolation. The fixed HS256 mode is
+intended for tests or controlled environments with separated secret handling.
+
+The policy connector credential should have read access only to the smallest required repository
+scope. The configured base URL—not a caller-provided URL—defines the network destination. Run
+backup restore drills against isolated targets; never point test or restore rehearsals at the
+production database.

@@ -24,6 +24,8 @@ from app.core.exceptions import (
     AssessmentGenerationError,
     AssessmentNotFoundError,
     AuthenticationRequiredError,
+    ConnectorNotConfiguredError,
+    ConnectorUnavailableError,
     DatabaseNotConfiguredError,
     DatabaseUnavailableError,
     DocumentParseError,
@@ -33,6 +35,7 @@ from app.core.exceptions import (
     EmptyKnowledgeDocumentError,
     EncryptedPDFError,
     FileTooLargeError,
+    InvalidConnectorResponseError,
     InvalidEmbeddingError,
     InvalidLLMResponseError,
     InvalidReviewTransitionError,
@@ -57,6 +60,7 @@ from app.core.exceptions import (
 )
 from app.core.logging import configure_logging
 from app.db.session import dispose_database_resources
+from app.observability.exporters import close_telemetry_exporters
 from app.providers.factory import close_provider_clients
 from app.schemas.errors import ErrorDetail, ErrorResponse
 
@@ -119,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             yield
         finally:
             close_provider_clients()
+            close_telemetry_exporters()
             dispose_database_resources()
             logger.info("application_stopped")
 
@@ -151,6 +156,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         status_codes = {
             AuthenticationRequiredError: status.HTTP_401_UNAUTHORIZED,
             PermissionDeniedError: status.HTTP_403_FORBIDDEN,
+            ConnectorNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            ConnectorUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+            InvalidConnectorResponseError: status.HTTP_502_BAD_GATEWAY,
             AssessmentNotFoundError: status.HTTP_404_NOT_FOUND,
             RuntimeStateNotFoundError: status.HTTP_404_NOT_FOUND,
             InvalidReviewTransitionError: status.HTTP_409_CONFLICT,

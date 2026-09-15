@@ -84,7 +84,7 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   integration-tests:

@@ -89,6 +89,26 @@ def test_production_can_select_anthropic_chat_without_claiming_anthropic_embeddi
     assert settings.embedding_provider == "openai"
 
 
+def test_production_accepts_https_oidc_jwks_instead_of_static_key() -> None:
+    settings = _production_settings(
+        AUTH_JWT_SECRET=None,
+        AUTH_JWT_ALGORITHM="RS256",
+        AUTH_JWKS_URL="https://identity.example.invalid/.well-known/jwks.json",
+    )
+
+    assert settings.auth_jwks_url is not None
+    assert settings.auth_jwt_verification_key is None
+
+
+def test_production_rejects_insecure_oidc_jwks_transport() -> None:
+    with pytest.raises(ValidationError, match="must use HTTPS"):
+        _production_settings(
+            AUTH_JWT_SECRET=None,
+            AUTH_JWT_ALGORITHM="RS256",
+            AUTH_JWKS_URL="http://identity.example.invalid/.well-known/jwks.json",
+        )
+
+
 def test_partial_pricing_configuration_is_rejected() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, MODEL_INPUT_COST_PER_1M_TOKENS=1.0)

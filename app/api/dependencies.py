@@ -1,5 +1,6 @@
 """API dependency wiring for application services."""
 
+from collections.abc import Iterator
 from typing import Annotated
 
 from fastapi import Depends
@@ -11,7 +12,9 @@ from app.agents.evidence_agent import OpenAIEvidenceAgent
 from app.agents.risk_governance_agent import OpenAIRiskGovernanceAgent
 from app.agents.structured_output import StructuredOutput
 from app.agents.synthesis_agent import OpenAISynthesisAgent
+from app.connectors.policy_repository import PolicyRepositoryConnector
 from app.core.config import Settings, get_settings
+from app.core.exceptions import ConnectorNotConfiguredError
 from app.db.session import get_db_session
 from app.graph.multi_agent_workflow import MultiAgentAssessmentWorkflow
 from app.graph.workflow import AgenticAssessmentWorkflow
@@ -27,6 +30,7 @@ from app.knowledge_graph.enrichment import KnowledgeGraphEnrichmentService
 from app.knowledge_graph.extraction import OpenAIEntityExtractor, OpenAIRelationshipExtractor
 from app.knowledge_graph.hybrid import HybridRAGService, HybridRetrievalService
 from app.knowledge_graph.retrieval import GraphRetrievalService
+from app.observability.exporters import OperationalTelemetryExporter, build_telemetry_exporter
 from app.providers.contracts import EmbeddingProvider, StructuredModelProvider
 from app.providers.factory import build_embedding_provider, build_structured_model_provider
 from app.rag.ingestion import KnowledgeIngestionService
@@ -52,6 +56,18 @@ from app.tools.registry import ToolRegistry
 def get_runtime_metrics_recorder() -> RuntimeMetricsRecorder:
     """Create one request-scoped privacy-safe metrics accumulator."""
     return RuntimeMetricsRecorder()
+
+
+def get_operational_telemetry_exporter(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> OperationalTelemetryExporter:
+    """Return the configured process-level privacy-safe exporter."""
+    return build_telemetry_exporter(
+        settings.observability_exporter,
+        settings.otel_exporter_otlp_endpoint,
+        settings.otel_service_name,
+        settings.otel_export_timeout_seconds,
+    )
 
 
 def get_structured_model_provider(
@@ -96,6 +112,9 @@ def get_runtime_governance_service(
     reviews: Annotated[RuntimeReviewRepository, Depends(get_runtime_review_repository)],
     settings: Annotated[Settings, Depends(get_settings)],
     metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
+    telemetry_exporter: Annotated[
+        OperationalTelemetryExporter, Depends(get_operational_telemetry_exporter)
+    ],
 ) -> RuntimeGovernanceService:
     """Build the framework-neutral runtime gate and review coordinator."""
     policy = RuntimeRiskPolicy(
@@ -117,6 +136,7 @@ def get_runtime_governance_service(
         input_cost_per_million=settings.model_input_cost_per_1m_tokens,
         output_cost_per_million=settings.model_output_cost_per_1m_tokens,
         metrics=metrics,
+        telemetry_exporter=telemetry_exporter,
     )
 
 
@@ -286,6 +306,49 @@ def get_file_ingestion_service(
         graph=graph,
         max_upload_size_bytes=settings.max_upload_size_mb * 1024 * 1024,
     )
+
+
+def require_policy_repository_settings(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Settings:
+    """Fail before building database/provider dependencies when the connector is disabled."""
+    if (
+        not settings.policy_repository_enabled
+        or settings.policy_repository_base_url is None
+        or settings.policy_repository_token is None
+    ):
+        raise ConnectorNotConfiguredError
+    return settings
+
+
+def get_policy_repository_connector(
+    settings: Annotated[Settings, Depends(require_policy_repository_settings)],
+    knowledge: Annotated[
+        KnowledgeIngestionService,
+        Depends(get_knowledge_ingestion_service),
+    ],
+    graph: Annotated[
+        KnowledgeGraphEnrichmentService | None,
+        Depends(get_graph_enrichment_service),
+    ],
+) -> Iterator[PolicyRepositoryConnector]:
+    """Build the single opt-in read-only enterprise connector."""
+    assert settings.policy_repository_base_url is not None
+    assert settings.policy_repository_token is not None
+    connector = PolicyRepositoryConnector(
+        base_url=settings.policy_repository_base_url,
+        token=settings.policy_repository_token.get_secret_value(),
+        documents_path=settings.policy_repository_documents_path,
+        knowledge=knowledge,
+        graph=graph,
+        timeout_seconds=settings.policy_repository_timeout_seconds,
+        max_documents=settings.policy_repository_max_documents,
+        max_response_bytes=settings.policy_repository_max_response_mb * 1024 * 1024,
+    )
+    try:
+        yield connector
+    finally:
+        connector.close()
 
 
 def get_assessment_agent(

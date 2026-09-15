@@ -132,7 +132,9 @@ jobs:
             sleep 2
           done
           curl --fail --silent http://127.0.0.1:8000/health
+          curl --fail --silent http://127.0.0.1:3000/health >/tmp/frontend-health.json
           python -c "import json; payload=json.load(open('/tmp/readiness.json')); assert payload['status'] == 'ready'"
+          python -c "import json; payload=json.load(open('/tmp/frontend-health.json')); assert payload['status'] == 'ok'"
           grep --quiet "Enterprise AI" /tmp/frontend.html
       - name: Readiness fails safely without its database
         run: |

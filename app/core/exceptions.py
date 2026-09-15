@@ -25,6 +25,27 @@ class PermissionDeniedError(ApplicationError):
     public_message = "The authenticated principal is not permitted to perform this action."
 
 
+class ConnectorNotConfiguredError(ApplicationError):
+    """Raised when the single enterprise connector is disabled or incomplete."""
+
+    error_code = "connector_not_configured"
+    public_message = "The policy repository connector is not configured."
+
+
+class ConnectorUnavailableError(ApplicationError):
+    """Raised when the configured repository cannot be reached safely."""
+
+    error_code = "connector_unavailable"
+    public_message = "The policy repository is temporarily unavailable. Please try again."
+
+
+class InvalidConnectorResponseError(ApplicationError):
+    """Raised when an upstream response violates the bounded connector schema."""
+
+    error_code = "invalid_connector_response"
+    public_message = "The policy repository returned an invalid response."
+
+
 class OpenAIClientNotConfiguredError(ApplicationError):
     """Raised when an AI assessment is requested without an API key."""
 

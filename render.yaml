@@ -1,0 +1,71 @@
+services:
+  - type: web
+    name: enterprise-ai-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeployTrigger: checksPass
+    healthCheckPath: /health
+    preDeployCommand: alembic upgrade head
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: enterprise-ai-postgres
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PROVIDER_REQUIRED
+        value: "true"
+      - key: RAG_ENABLED
+        value: "true"
+      - key: KNOWLEDGE_GRAPH_ENABLED
+        value: "true"
+      - key: AGENTIC_WORKFLOW_ENABLED
+        value: "true"
+      - key: MULTI_AGENT_WORKFLOW_ENABLED
+        value: "true"
+      - key: RUNTIME_RISK_GATE_ENABLED
+        value: "true"
+      - key: AUTH_ENABLED
+        value: "true"
+      - key: AUTH_JWT_ALGORITHM
+        value: RS256
+      - key: AUTH_JWKS_URL
+        sync: false
+      - key: AUTH_JWT_ISSUER
+        sync: false
+      - key: AUTH_JWT_AUDIENCE
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: TRUSTED_HOSTS
+        sync: false
+      - key: OBSERVABILITY_EXPORTER
+        value: none
+      - key: POLICY_REPOSITORY_ENABLED
+        value: "false"
+
+  - type: web
+    name: enterprise-ai-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    autoDeployTrigger: checksPass
+    healthCheckPath: /health
+    envVars:
+      - key: API_INTERNAL_HOSTPORT
+        fromService:
+          type: web
+          name: enterprise-ai-api
+          property: hostport
+
+databases:
+  - name: enterprise-ai-postgres
+    databaseName: enterprise_ai
+    user: enterprise_ai
+    postgresMajorVersion: "16"
+    ipAllowList: []

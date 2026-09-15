@@ -5,11 +5,15 @@ from uuid import uuid4
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
+from jwt import PyJWKClientError
 
 from app.api.dependencies import get_assessment_service, get_runtime_governance_service
 from app.core.config import Settings
+from app.core.exceptions import AuthenticationRequiredError
 from app.identity.models import AuthenticatedPrincipal, Role
+from app.identity.tokens import OIDCJWKSVerifier
 from app.main import create_app
 from app.runtime.models import HumanReviewAction, HumanReviewStatus
 from tests.test_assessments import VALID_REQUEST
@@ -17,6 +21,24 @@ from tests.test_assessments import VALID_REQUEST
 SECRET = "synthetic-test-signing-key-with-more-than-32-characters"
 ISSUER = "https://identity.test.invalid/"
 AUDIENCE = "enterprise-agentic-ai-platform"
+RSA_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+class SyntheticSigningKey:
+    key = RSA_PRIVATE_KEY.public_key()
+
+
+class SyntheticJWKSResolver:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.calls = 0
+
+    def get_signing_key_from_jwt(self, token: str) -> SyntheticSigningKey:
+        del token
+        self.calls += 1
+        if self.fail:
+            raise PyJWKClientError("synthetic unknown kid")
+        return SyntheticSigningKey()
 
 
 def _settings() -> Settings:
@@ -54,6 +76,76 @@ def _token(
     if extra:
         claims.update(extra)
     return jwt.encode(claims, secret, algorithm="HS256")
+
+
+def _oidc_token(
+    *,
+    issuer: str = ISSUER,
+    audience: str = AUDIENCE,
+    roles: list[str] | None = None,
+) -> str:
+    return jwt.encode(
+        {
+            "sub": "external-principal-123",
+            "iss": issuer,
+            "aud": audience,
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+            "roles": roles or ["reviewer"],
+            "email": "external@example.test",
+        },
+        RSA_PRIVATE_KEY,
+        algorithm="RS256",
+        headers={"kid": "synthetic-key-1"},
+    )
+
+
+def test_oidc_jwks_verifier_maps_external_identity_without_network() -> None:
+    resolver = SyntheticJWKSResolver()
+    verifier = OIDCJWKSVerifier(
+        jwks_url="https://identity.test.invalid/.well-known/jwks.json",
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        key_resolver=resolver,
+    )
+
+    principal = verifier.verify(_oidc_token())
+
+    assert principal.subject == "external-principal-123"
+    assert principal.email == "external@example.test"
+    assert principal.roles == frozenset({Role.REVIEWER})
+    assert resolver.calls == 1
+
+
+@pytest.mark.parametrize(
+    "token",
+    [
+        _oidc_token(issuer="https://wrong-issuer.test.invalid/"),
+        _oidc_token(audience="wrong-audience"),
+        _oidc_token(roles=["unsupported-external-role"]),
+    ],
+)
+def test_oidc_jwks_verifier_rejects_invalid_external_claims(token: str) -> None:
+    verifier = OIDCJWKSVerifier(
+        jwks_url="https://identity.test.invalid/.well-known/jwks.json",
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        key_resolver=SyntheticJWKSResolver(),
+    )
+
+    with pytest.raises(AuthenticationRequiredError):
+        verifier.verify(token)
+
+
+def test_oidc_jwks_verifier_rejects_unknown_key_id_safely() -> None:
+    verifier = OIDCJWKSVerifier(
+        jwks_url="https://identity.test.invalid/.well-known/jwks.json",
+        issuer=ISSUER,
+        audience=AUDIENCE,
+        key_resolver=SyntheticJWKSResolver(fail=True),
+    )
+
+    with pytest.raises(AuthenticationRequiredError):
+        verifier.verify("synthetic.unknown-kid.token")
 
 
 class AssessmentServiceStub:

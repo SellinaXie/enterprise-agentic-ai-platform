@@ -1,9 +1,40 @@
 # Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V8C platform for grounded enterprise AI architecture assessments. V8C preserves
-the V1-V8B intelligence, governance, provider, and identity boundaries and adds an authenticated
-enterprise product interface for assessments, evidence, runtime decisions, evaluations, operations,
-and human review.
+Production-minded V8D platform for grounded enterprise AI architecture assessments. It combines
+an authenticated product interface with PostgreSQL/pgvector, RAG and GraphRAG, deterministic and
+agentic execution, evaluation, runtime risk gates, human review, production identity, telemetry,
+deployment, recovery, and one bounded enterprise connector.
+
+## V8D Deployment and Enterprise Integration
+
+V8D completes the planned portfolio scope without adding another AI execution mode. The root
+[`render.yaml`](render.yaml) describes a Render deployment with two non-root Docker services,
+private PostgreSQL 16, pgvector migrations, health checks, and a pre-deploy Alembic release step.
+The API honors the platform-assigned port and accepts managed PostgreSQL connection strings. A
+protected, manually dispatched GitHub workflow can trigger a configured deploy hook and verify
+public liveness; no cloud account, paid resource, or secret is created by this repository.
+
+Production identity can use cached RS256 JWKS verification while retaining the fixed-key verifier
+for controlled local/test environments. An OpenTelemetry-first OTLP/HTTP adapter exports only an
+explicit content-free operational allowlist and never changes assessment outcomes if the collector
+is unavailable. Exactly one opt-in enterprise integration pulls bounded policy documents over
+read-only HTTPS and reuses the existing ingestion/embedding/GraphRAG pipeline. MCP is deliberately
+deferred because the connector exposes only one static read operation.
+
+Operational and portfolio artifacts:
+
+- [deployment guide](docs/deployment/render.md) and
+  [backup/restore runbook](docs/operations/backup-restore.md);
+- [observability boundary](docs/operations/observability.md) and
+  [policy connector contract](docs/connectors/policy-repository.md);
+- [architecture overview](docs/architecture/overview.md) and [ADR index](docs/adr/README.md);
+- [case study](docs/portfolio/case-study.md), [demo walkthrough](docs/demo/walkthrough.md), and
+  [safe screenshot plan](docs/portfolio/screenshots.md);
+- [security policy](SECURITY.md) and [contribution guide](CONTRIBUTING.md).
+
+For a network-free demo after migrations, run `python scripts/seed_demo.py`. It creates a synthetic
+customer-facing PII scenario that requires human review and a low-risk internal assistant that
+auto-completes. These paths demonstrate policy behavior, not production assurance.
 
 ## V8C Enterprise Product Interface
 
@@ -90,10 +121,10 @@ AUTH_JWT_AUDIENCE=enterprise-agentic-ai-platform
 AUTH_JWT_LEEWAY_SECONDS=30
 ```
 
-Production refuses to start with authentication disabled, an unsafe/missing verification key, or
-missing issuer/audience. V8B verifies locally configured JWTs behind a `TokenVerifier` boundary.
-External OIDC discovery/JWKS fetching, key rotation, password/user storage, provisioning, tenant
-isolation, and ABAC are explicitly deferred.
+For external identity, configure `AUTH_JWT_ALGORITHM=RS256` and `AUTH_JWKS_URL` instead of a static
+verification key. Production requires HTTPS, issuer, and audience. Signing keys are cached and an
+unknown key ID or invalid claim fails closed. Password/user storage, browser authorization-code
+login, provisioning, tenant isolation, and ABAC remain outside the current scope.
 
 ## V8A Production Foundation
 
@@ -126,8 +157,8 @@ Compose starts:
 - `integration-tests`: an opt-in `test` profile built with test-only dependencies.
 
 Normal API startup never performs a hidden downgrade or destructive reset. For production,
-execute the migration image as a release job before shifting traffic; coordinate backups and
-rollback plans separately. V8A does not implement backup/restore or disaster-recovery automation.
+execute the migration image as a release job before shifting traffic and follow the V8D backup,
+restore-rehearsal, and rollback runbook.
 
 Run the real PostgreSQL suite against the disposable Compose test database:
 
@@ -178,9 +209,10 @@ Unexpected errors return only a stable code, safe message, and correlation ID. J
 `Content-Length`, domain strings, reviewer comments, upload bytes, and metadata are bounded;
 deployment proxies must additionally enforce streaming/chunked request limits.
 
-For direct development, use `uvicorn app.main:app --reload`. The image runs
-`uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log`; request logging is handled by
-the application's structured middleware. A production reverse proxy must validate/replace
+For direct development, use `uvicorn app.main:app --reload`. The image runs `python -m app.server`,
+which starts Uvicorn on the hosting platform's validated `PORT` (default 8000) without access-log
+duplication; request logging is handled by the application's structured middleware. A production
+reverse proxy must validate/replace
 forwarded headers, send an allowed `Host`, enforce body/time limits, and configure Uvicorn's
 trusted forwarded IPs for that specific network rather than trusting arbitrary clients. Shutdown
 closes lazy provider clients and disposes SQLAlchemy pools; request-scoped sessions and upload
@@ -191,7 +223,7 @@ duration. Sensitive field names, prompts, private reasoning, embeddings, full do
 authorization data, provider messages, secrets, and production tracebacks are excluded. Secrets
 must be injected through environment variables or the deployment platform and must never be baked
 into the image. `pyproject.toml` declares supported direct-dependency ranges; `constraints.txt`
-pins the direct versions validated by V8B for repeatable container and CI installation without
+pins the direct versions validated by V8D for repeatable container and CI installation without
 claiming a fully locked transitive supply chain.
 
 ### CI boundary
@@ -202,10 +234,11 @@ secret-scan, package-build, image-build, or Compose-smoke failures. PostgreSQL t
 real pgvector service in CI; V7A/V7B remain deterministic and the optional LLM judge is disabled.
 No live provider call is required.
 
-V8B is a production-minded reference implementation, not certification for regulated production
-use and not a substitute for organizational security/compliance controls. External OIDC/JWKS,
-ABAC, SSO provisioning, tenant isolation, cloud deployment, managed secrets, backup
-automation, and external observability remain deferred.
+This is a production-minded reference implementation, not certification for regulated production
+use and not a substitute for organizational security/compliance controls. V8D adds OIDC/JWKS,
+deployment manifests, recovery wrappers, OTLP export, and one connector; ABAC, SSO provisioning,
+tenant isolation, scheduled backups, and vendor-specific incident integration remain deployment or
+future work.
 
 ## Runtime Reliability & Risk Controls
 
@@ -1132,6 +1165,11 @@ timeout, failure classification, telemetry accuracy/privacy, migration, and addi
 V8B adds mocked OpenAI/Anthropic adapter and capability tests, signed-JWT claim validation,
 401/403 request correlation, role enforcement, spoof-resistant reviewer attribution, public health
 checks, OpenAPI bearer security, production auth configuration, and PostgreSQL identity auditing.
+V8D adds real RSA/JWKS verification with a network-free key resolver, privacy-safe telemetry
+allowlisting and outage degradation, bounded policy-repository fetch/validation/provenance, admin
+authorization, deterministic dual-outcome demo seeding, managed-PostgreSQL URL adaptation,
+platform port validation, frontend liveness, and deployment-manifest contracts. Live identity,
+connector, collector, and provider calls remain explicitly outside default CI.
 
 ### PostgreSQL and pgvector integration tests
 
@@ -1187,6 +1225,6 @@ remains deferred until a concrete interoperability use case exists.
 
 The V6.5 ingestion limitations remain: scanned/image-only PDFs need OCR; file ingestion is
 synchronous and memory-bounded; and legacy Word, spreadsheets, presentations, image understanding,
-archive ingestion, web crawling, and external enterprise connectors are not implemented.
-V8C supplies the local enterprise product interface. Malware scanning, object storage, queues,
-hosted deployment, managed OIDC/JWKS, and tenant isolation remain deferred to V8D or later.
+archive ingestion, and web crawling are not implemented. V8D adds only the bounded policy
+repository connector. Malware scanning, object storage, queues, automated IdP provisioning, full
+tenant isolation, and a live cloud environment remain external deployment or future work.
