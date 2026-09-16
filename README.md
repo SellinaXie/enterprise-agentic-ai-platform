@@ -8,11 +8,18 @@ deployment, recovery, and one bounded enterprise connector.
 ## V8D Deployment and Enterprise Integration
 
 V8D completes the planned portfolio scope without adding another AI execution mode. The root
-[`render.yaml`](render.yaml) describes a Render deployment with two non-root Docker services,
+[`render.yaml`](render.yaml) describes a Render deployment with one non-root FastAPI Docker service,
 private PostgreSQL 16, pgvector migrations, health checks, and a pre-deploy Alembic release step.
-The API honors the platform-assigned port and accepts managed PostgreSQL connection strings. A
+The Next.js frontend deploys independently to Vercel. The API honors the platform-assigned port and
+accepts managed PostgreSQL connection strings. A
 protected, manually dispatched GitHub workflow can trigger a configured deploy hook and verify
 public liveness; no cloud account, paid resource, or secret is created by this repository.
+
+`/demo` is a one-click public showcase built entirely from static synthetic data. It walks through
+the V0–V8 architecture journey plus architecture, evidence, risk, runtime governance, human review,
+and operations without mounting authentication, reading a JWT, or calling the backend. The real
+application remains separately protected by OIDC/JWKS and RBAC. The intended custom domains are
+`demo.sellinaxie.com` for the showcase and `app.sellinaxie.com` for the authenticated product.
 
 Production identity can use cached RS256 JWKS verification while retaining the fixed-key verifier
 for controlled local/test environments. An OpenTelemetry-first OTLP/HTTP adapter exports only an
@@ -23,7 +30,8 @@ deferred because the connector exposes only one static read operation.
 
 Operational and portfolio artifacts:
 
-- [deployment guide](docs/deployment/render.md) and
+- [Vercel + Render deployment guide](docs/deployment/vercel-render.md),
+  [Render backend guide](docs/deployment/render.md), and
   [backup/restore runbook](docs/operations/backup-restore.md);
 - [observability boundary](docs/operations/observability.md) and
   [policy connector contract](docs/connectors/policy-repository.md);

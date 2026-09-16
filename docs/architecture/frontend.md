@@ -14,20 +14,22 @@ Browser
   |
   | HTTPS / page navigation + /backend/* API calls
   v
-Next.js server (port 3000, non-root container)
+Next.js server (Vercel production; non-root container locally)
   |
-  | internal HTTP, X-Request-ID, bearer JWT when configured
+  | server-side rewrite to Render, X-Request-ID, bearer JWT when configured
   v
-FastAPI (port 8000, non-root container)
+FastAPI on Render (platform port, non-root container)
   |
   +--> PostgreSQL + pgvector
   +--> existing provider abstractions
 ```
 
 Next.js uses a same-origin `/backend/*` rewrite. In local development it targets
-`http://127.0.0.1:8000`; the production container builds it with `http://api:8000`. This avoids
-exposing a Docker hostname to the browser and keeps CORS simple. The backend's existing CORS and
-trusted-host controls still apply to direct API access.
+`http://127.0.0.1:8000`; Compose builds it with `http://api:8000`; Vercel receives the Render API
+HTTPS URL through the server-side `API_INTERNAL_URL` variable. This keeps preview deployments
+same-origin and avoids exposing a container hostname or secret to the browser. The backend's CORS
+allowlist explicitly permits the two production frontend domains and still applies to direct API
+access.
 
 ## Product surfaces
 
@@ -41,6 +43,9 @@ trusted-host controls still apply to direct API access.
   clearly labelled as synthetic rather than production assurance.
 - **Operations:** safe runtime checkpoint summaries and request IDs; no prompts, tokens, private
   reasoning, credentials, full documents, or raw provider payloads.
+- **Public demo:** `/demo` presents static synthetic architecture, evidence, risk, evaluation,
+  runtime-governance, HITL, and operations examples without mounting the authentication provider or
+  making an API call.
 
 ## Trust and security boundaries
 
@@ -48,6 +53,10 @@ The client has one typed API module. It attaches a bounded request ID and, when 
 token. Tokens are held only in `sessionStorage`, which limits them to the current browser tab; they
 are not placed in source, URLs, cookies, local storage, telemetry, or logs. The login view validates
 the token by calling the authenticated `/api/v1/session` endpoint.
+
+The `/demo` path sits outside that client boundary. It does not initialize session discovery, read
+`sessionStorage`, or render review mutations. Its examples are version-controlled fictional data
+and confer no analyst, reviewer, or administrator authority.
 
 Navigation is role-aware for clarity, but it is not the security control. FastAPI independently
 requires a verified principal on product APIs and reviewer/admin roles on queues, candidates,
@@ -78,7 +87,8 @@ version-controlled, network-free fixture harness; it makes no provider request.
 
 Frontend CI installs the exact lockfile and runs ESLint, TypeScript, Vitest, and a production Next.js
 build. Tests cover authenticated request behavior, correlation/error handling, role-aware navigation,
-confirmation before review mutation, and safe rendering of script-like or prompt-injection content.
+public-demo isolation and interaction, confirmation before review mutation, and safe rendering of
+script-like or prompt-injection content.
 The Compose smoke job builds and starts the frontend with PostgreSQL, migrations, and FastAPI, then
 checks API readiness, frontend liveness, and the rendered product shell. Compose waits for the API
 healthcheck before starting the frontend, and the frontend container exposes its own network-free

@@ -78,21 +78,35 @@ def test_frontend_container_is_non_root_and_compose_connected() -> None:
     assert "condition: service_healthy" in compose
 
 
-def test_render_blueprint_connects_private_services_and_managed_postgres() -> None:
+def test_render_blueprint_connects_api_and_managed_postgres() -> None:
     blueprint = (ROOT / "render.yaml").read_text()
 
     assert "enterprise-ai-api" in blueprint
-    assert "enterprise-ai-frontend" in blueprint
     assert "enterprise-ai-postgres" in blueprint
     assert "preDeployCommand: alembic upgrade head" in blueprint
-    assert blueprint.count("autoDeployTrigger: checksPass") == 2
+    assert blueprint.count("autoDeployTrigger: checksPass") == 1
     assert "property: connectionString" in blueprint
-    assert "property: hostport" in blueprint
     assert 'postgresMajorVersion: "16"' in blueprint
     assert "ipAllowList: []" in blueprint
     assert "AUTH_JWKS_URL" in blueprint
     assert "OPENAI_API_KEY" in blueprint
     assert "sync: false" in blueprint
+    assert "https://demo.sellinaxie.com,https://app.sellinaxie.com" in blueprint
+    assert "*" not in blueprint
+
+
+def test_vercel_contract_uses_frontend_workspace_and_server_side_api_proxy() -> None:
+    vercel = (ROOT / "frontend/vercel.json").read_text()
+    next_config = (ROOT / "frontend/next.config.ts").read_text()
+    production_example = (ROOT / "frontend/.env.production.example").read_text()
+
+    assert '"framework": "nextjs"' in vercel
+    assert '"installCommand": "npm ci"' in vercel
+    assert '"buildCommand": "npm run build"' in vercel
+    assert 'source: "/backend/:path*"' in next_config
+    assert "API_INTERNAL_URL" in next_config
+    assert "NEXT_PUBLIC_API_BASE_URL=/backend" in production_example
+    assert "NEXT_PUBLIC_APP_URL=https://app.sellinaxie.com" in production_example
 
 
 def test_production_deploy_is_manual_protected_and_secret_backed() -> None:

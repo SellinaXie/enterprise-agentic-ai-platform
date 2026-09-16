@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
-import { AppShell } from "@/components/app-shell";
-import { AuthProvider } from "@/components/auth-provider";
+import { ExperienceShell } from "@/components/experience-shell";
 
 import "./globals.css";
 
@@ -17,7 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <AuthProvider><AppShell>{children}</AppShell></AuthProvider>
+        <ExperienceShell>{children}</ExperienceShell>
       </body>
     </html>
   );

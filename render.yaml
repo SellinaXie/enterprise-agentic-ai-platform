@@ -41,27 +41,13 @@ services:
       - key: AUTH_JWT_AUDIENCE
         sync: false
       - key: CORS_ALLOWED_ORIGINS
-        sync: false
+        value: https://demo.sellinaxie.com,https://app.sellinaxie.com
       - key: TRUSTED_HOSTS
         sync: false
       - key: OBSERVABILITY_EXPORTER
         value: none
       - key: POLICY_REPOSITORY_ENABLED
         value: "false"
-
-  - type: web
-    name: enterprise-ai-frontend
-    runtime: docker
-    dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
-    autoDeployTrigger: checksPass
-    healthCheckPath: /health
-    envVars:
-      - key: API_INTERNAL_HOSTPORT
-        fromService:
-          type: web
-          name: enterprise-ai-api
-          property: hostport
 
 databases:
   - name: enterprise-ai-postgres

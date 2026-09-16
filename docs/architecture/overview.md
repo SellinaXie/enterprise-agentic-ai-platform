@@ -17,12 +17,13 @@ than becoming the default.
 ## End-to-end architecture
 
 ```text
+Public synthetic /demo ──> Vercel Next.js ──> Static guided showcase
+
+Authenticated user ──────> Vercel Next.js ──> Render FastAPI (OIDC/JWKS + JWT)
+                                                       |
 Policy repository + enterprise documents + business context
-                   |
-                   v
-      Authenticated Enterprise Product UI (OIDC/JWKS)
-                   |
-                   v
+                                                       |
+                                                       v
        Validate, parse, normalize, chunk
                    |
                    v
@@ -175,9 +176,10 @@ review actions.
 
 GitHub Actions runs network-free unit, workflow, and evaluation regressions alongside a real
 PostgreSQL/pgvector integration suite and container smoke tests. Alembic validates both an empty
-database upgrade and the current migration downgrade/upgrade boundary. A Render Blueprint defines
-the two web services, private PostgreSQL 16 database, and pre-deploy migration. OTLP/HTTP export is
-optional and content-free; the policy repository is the sole read-only enterprise connector.
+database upgrade and the current migration downgrade/upgrade boundary. Vercel hosts the Next.js
+frontend and its static, synthetic `/demo`; a Render Blueprint defines the API web service, private
+PostgreSQL 16 database, and pre-deploy migration. OTLP/HTTP export is optional and content-free; the
+policy repository is the sole read-only enterprise connector.
 
 ## Evaluation strategy
 
