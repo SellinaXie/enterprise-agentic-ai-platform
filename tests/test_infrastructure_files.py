@@ -98,7 +98,7 @@ def test_render_blueprint_connects_api_and_managed_postgres() -> None:
 def test_vercel_contract_uses_frontend_workspace_and_server_side_api_proxy() -> None:
     vercel = (ROOT / "frontend/vercel.json").read_text()
     next_config = (ROOT / "frontend/next.config.ts").read_text()
-    production_example = (ROOT / "frontend/.env.production.example").read_text()
+    production_example = (ROOT / "frontend/production.env.example").read_text()
 
     assert '"framework": "nextjs"' in vercel
     assert '"installCommand": "npm ci"' in vercel

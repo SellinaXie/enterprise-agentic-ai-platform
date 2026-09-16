@@ -61,6 +61,9 @@ schema deployment checkpoint; an application smoke test below exercises retrieva
 | `NEXT_PUBLIC_API_BASE_URL` | `/backend` | Safe public relative path |
 | `NEXT_PUBLIC_APP_URL` | `https://app.sellinaxie.com` | Optional public navigation URL |
 
+`frontend/production.env.example` records the non-secret shape for reference; do not upload it as a
+secret bundle or replace hosting-platform environment management with a committed production file.
+
 The browser calls `/backend`; Next.js proxies that path to `API_INTERNAL_URL`. This avoids exposing
 credentials (there are none in that URL), keeps preview deployments same-origin, and avoids broad
 CORS patterns. Never put JWTs, provider keys, database URLs, deploy hooks, or OIDC client secrets in
