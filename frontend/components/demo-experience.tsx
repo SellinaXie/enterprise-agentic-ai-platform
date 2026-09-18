@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Icon } from "./icons";
 import { architectureJourney, demoStages } from "@/lib/demo-data";
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "/";
+const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || "/dashboard";
 
 export function DemoExperience() {
   const [activeIndex, setActiveIndex] = useState(0);

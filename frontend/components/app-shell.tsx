@@ -7,7 +7,7 @@ import { useAuth } from "./auth-provider";
 import { Icon } from "./icons";
 
 const navigation = [
-  { href: "/", label: "Dashboard", icon: "dashboard" },
+  { href: "/dashboard", label: "Dashboard", icon: "dashboard" },
   { href: "/assessments", label: "Assessments", icon: "assessment" },
   { href: "/assessments/new", label: "New assessment", icon: "add" },
   { href: "/reviews", label: "Reviews", icon: "review", reviewOnly: true },
@@ -30,13 +30,13 @@ export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) 
     <div className="app-frame">
       <a className="skip-link" href="#main-content">Skip to content</a>
       <aside className="sidebar">
-        <Link className="brand" href="/" aria-label="Enterprise AI platform dashboard">
+        <Link className="brand" href="/dashboard" aria-label="Enterprise AI platform dashboard">
           <span className="brand-mark"><Icon name="shield" width="22" height="22" /></span>
           <span><strong>AI Risk</strong><small>Architecture Intelligence</small></span>
         </Link>
         <nav className="primary-nav" aria-label="Primary navigation">
           {visibleNavigation.map((item) => {
-            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const active = item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href);
             return (
               <Link key={item.href} href={item.href} className={active ? "nav-link active" : "nav-link"} aria-current={active ? "page" : undefined}>
                 <Icon name={item.icon} width="19" height="19" />

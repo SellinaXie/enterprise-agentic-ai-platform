@@ -9,11 +9,12 @@ app.sellinaxie.com ──────┘                                      �
                                                                 └─ Render PostgreSQL 16 + pgvector
 ```
 
-The public `/demo` route is static synthetic content. It does not mount the authentication
-provider, read a JWT, or call the backend. The application routes retain the existing
-JWT/OIDC/RBAC boundary. Both domains can point to one Vercel project: use `/demo` for the showcase
-and the existing root routes for the authenticated product. No account, domain, plan, or secret is
-created by repository code.
+The public showcase (`/`, `/demo`, `/architecture`) is static content. None of it mounts the
+authentication provider, reads a JWT, or calls the backend, so it renders the same whether or not
+the Render API is deployed. The application routes (`/dashboard` and onward) retain the existing
+JWT/OIDC/RBAC boundary. Both domains can point to one Vercel project: use the showcase routes for
+`demo.sellinaxie.com` and `/dashboard` onward for the authenticated product on
+`app.sellinaxie.com`. No account, domain, plan, or secret is created by repository code.
 
 ## 1. Deploy the backend and database to Render
 
@@ -73,12 +74,14 @@ Deploy and first verify the Vercel-generated production URL:
 
 ```bash
 curl --fail-with-body https://PROJECT.vercel.app/health
+curl --fail-with-body https://PROJECT.vercel.app/
 curl --fail-with-body https://PROJECT.vercel.app/demo
+curl --fail-with-body https://PROJECT.vercel.app/architecture
 ```
 
-The frontend `/health` route confirms the Next.js process only. The guided demo is fully usable even
-when the API is unavailable; that is intentional safe separation, not evidence that the backend is
-ready.
+The frontend `/health` route confirms the Next.js process only. The landing page, guided demo, and
+architecture overview are fully usable even when the API is unavailable; that is intentional safe
+separation, not evidence that the backend is ready.
 
 ## 3. Connect custom domains and DNS
 
@@ -103,8 +106,9 @@ curl --fail-with-body https://app.sellinaxie.com/health
 
 Use Vercel's domain inspection screen (or `vercel domains inspect`) to confirm **Valid
 Configuration**, then check that both URLs negotiate HTTPS without a certificate warning. The
-showcase's canonical public link is `https://demo.sellinaxie.com/demo`. The authenticated app is
-served from `https://app.sellinaxie.com/`.
+showcase's canonical public link is `https://demo.sellinaxie.com/demo`, alongside `/` and
+`/architecture` on the same domain. The authenticated app is served from
+`https://app.sellinaxie.com/dashboard`.
 
 ## 4. Temporary Vercel domains and CORS
 
@@ -122,8 +126,8 @@ Run after Render readiness, Vercel deployment, DNS, and HTTPS are all independen
 2. Walk through all seven stages: architecture, evidence, risk, evaluation, governance, HITL, and
    operations.
 3. Confirm the page never requests `/api/v1/session`, stores a token, or exposes an action that can
-   approve/reject a review.
-4. Open `https://app.sellinaxie.com/`; confirm the OIDC/JWT login boundary appears.
+   approve/reject a review. Repeat this check for `/` and `/architecture`.
+4. Open `https://app.sellinaxie.com/dashboard`; confirm the OIDC/JWT login boundary appears.
 5. Authenticate with an analyst account and create a low-risk synthetic assessment.
 6. Confirm POST/GET persistence, evidence references, execution metadata, and request ID.
 7. With a reviewer test account, create a high-risk synthetic assessment and verify the runtime

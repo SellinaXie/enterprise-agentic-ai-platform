@@ -263,6 +263,22 @@ tbody tr:hover { background: #fafbf9; }
 .demo-footer { display: flex; justify-content: space-between; gap: 24px; padding: 26px max(24px, calc((100vw - 1180px) / 2)); background: #10251e; color: #a9beb4; font-size: .72rem; }
 .demo-footer a { color: white; font-weight: 700; }
 
+/* Shared chrome (nav/footer/main width above) is reused across all public showcase pages: the
+   landing page (`/`), the guided demo (`/demo`), and the architecture overview (`/architecture`). */
+.showcase-hero { max-width: 780px; padding: 84px 0 44px; }
+.showcase-hero h1 { max-width: 720px; margin: 14px 0 20px; font-size: clamp(2.6rem, 5.2vw, 4.1rem); line-height: 1.04; }
+.showcase-hero p { max-width: 660px; margin-bottom: 30px; font-size: 1.02rem; }
+.showcase-section { padding: 8px 0 56px; }
+.showcase-section-heading { margin-bottom: 26px; }
+.showcase-section-heading h2 { margin: 6px 0 0; font-family: Georgia, serif; font-size: clamp(1.6rem, 3vw, 2.3rem); font-weight: 500; }
+.link-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.link-card { display: flex; flex-direction: column; gap: 12px; padding: 26px; border: 1px solid var(--border); border-radius: 16px; background: white; box-shadow: var(--shadow); transition: transform .15s ease, box-shadow .15s ease; }
+.link-card:hover { transform: translateY(-2px); box-shadow: 0 18px 40px rgb(21 42 32 / 10%); }
+.link-card-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: var(--mint); color: var(--forest); }
+.link-card h3 { margin: 4px 0 2px; font-family: Georgia, serif; font-size: 1.15rem; font-weight: 500; }
+.link-card p { margin: 0; font-size: .82rem; flex: 1; }
+.link-card > span:last-child { display: flex; align-items: center; gap: 6px; color: var(--forest-light); font-size: .78rem; font-weight: 700; }
+
 @media (max-width: 1000px) {
   .app-frame { grid-template-columns: 84px minmax(0, 1fr); }
   .sidebar { padding-inline: 12px; }
@@ -275,6 +291,7 @@ tbody tr:hover { background: #fafbf9; }
   .demo-case-card { max-width: 560px; }
   .demo-stepper { grid-template-columns: repeat(3, 1fr); }
   .journey-grid { grid-template-columns: repeat(2, 1fr); }
+  .link-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
@@ -309,4 +326,6 @@ tbody tr:hover { background: #fafbf9; }
   .journey-grid h3 { margin-top: 18px; }
   .demo-boundary { padding: 28px; }
   .demo-footer { flex-direction: column; }
+  .showcase-hero { padding: 52px 0 30px; }
+  .link-grid { grid-template-columns: 1fr; }
 }

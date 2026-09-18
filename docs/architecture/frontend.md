@@ -43,9 +43,11 @@ access.
   clearly labelled as synthetic rather than production assurance.
 - **Operations:** safe runtime checkpoint summaries and request IDs; no prompts, tokens, private
   reasoning, credentials, full documents, or raw provider payloads.
-- **Public demo:** `/demo` presents static synthetic architecture, evidence, risk, evaluation,
-  runtime-governance, HITL, and operations examples without mounting the authentication provider or
-  making an API call.
+- **Public showcase:** `/` (portfolio landing) and `/architecture` (design rationale) join `/demo`
+  as fully static routes outside the authenticated shell. `/demo` presents synthetic architecture,
+  evidence, risk, evaluation, runtime-governance, HITL, and operations examples. None of the three
+  mount the authentication provider or make an API call. The authenticated product's dashboard now
+  lives at `/dashboard` rather than `/`.
 
 ## Trust and security boundaries
 
@@ -54,9 +56,9 @@ token. Tokens are held only in `sessionStorage`, which limits them to the curren
 are not placed in source, URLs, cookies, local storage, telemetry, or logs. The login view validates
 the token by calling the authenticated `/api/v1/session` endpoint.
 
-The `/demo` path sits outside that client boundary. It does not initialize session discovery, read
-`sessionStorage`, or render review mutations. Its examples are version-controlled fictional data
-and confer no analyst, reviewer, or administrator authority.
+The `/`, `/demo`, and `/architecture` paths sit outside that client boundary. None of them initialize
+session discovery, read `sessionStorage`, or render review mutations. `/demo`'s examples are
+version-controlled fictional data and confer no analyst, reviewer, or administrator authority.
 
 Navigation is role-aware for clarity, but it is not the security control. FastAPI independently
 requires a verified principal on product APIs and reviewer/admin roles on queues, candidates,

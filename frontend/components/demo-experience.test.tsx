@@ -9,7 +9,7 @@ describe("public guided demo", () => {
 
     expect(screen.getByText("Synthetic data only")).toBeInTheDocument();
     expect(screen.getByText(/makes no backend request/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open authenticated app" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Open authenticated app" })).toHaveAttribute("href", "/dashboard");
   });
 
   it("walks through evidence, risk, governance, HITL, and operations", () => {
