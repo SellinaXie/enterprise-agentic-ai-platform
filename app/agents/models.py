@@ -88,6 +88,9 @@ class AssessmentExecutionMetadata(BaseModel):
 
     request_id: str | None = Field(default=None, max_length=128)
     execution_mode: Literal["single_agent", "agentic"] = "single_agent"
+    preferred_execution_mode: Literal["deterministic", "single_agent", "multi_agent"] | None = None
+    routing_reason_codes: list[str] = Field(default_factory=list, max_length=12)
+    fallback_reason_codes: list[str] = Field(default_factory=list, max_length=12)
     steps_used: int = Field(ge=0)
     tools_used: list[str]
     termination_reason: AgentTerminationReason
@@ -102,4 +105,7 @@ class DeterministicExecutionMetadata(BaseModel):
 
     request_id: str | None = Field(default=None, max_length=128)
     execution_mode: Literal["deterministic"] = "deterministic"
+    preferred_execution_mode: Literal["deterministic", "single_agent", "multi_agent"] | None = None
+    routing_reason_codes: list[str] = Field(default_factory=list, max_length=12)
+    fallback_reason_codes: list[str] = Field(default_factory=list, max_length=12)
     graph_retrieval: GraphRetrievalExecutionMetadata | None = None

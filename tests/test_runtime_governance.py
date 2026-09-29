@@ -156,22 +156,26 @@ def test_gate_outcomes_drive_persisted_lifecycle(
 
 
 @pytest.mark.parametrize(
-    "execution",
+    ("execution", "expected_model_calls"),
     [
-        DeterministicExecutionMetadata(),
-        AssessmentExecutionMetadata(
-            steps_used=1,
-            tools_used=[],
-            termination_reason=AgentTerminationReason.COMPLETED,
-            trace=[],
+        (DeterministicExecutionMetadata(), 1),
+        (
+            AssessmentExecutionMetadata(
+                steps_used=1,
+                tools_used=[],
+                termination_reason=AgentTerminationReason.COMPLETED,
+                trace=[],
+            ),
+            2,
         ),
-        _multi_execution(),
+        (_multi_execution(), 4),
     ],
     ids=["deterministic", "single-agent", "multi-agent"],
 )
 def test_each_execution_mode_can_pause_and_resume_on_approval(
     db_session: Session,
     execution: object,
+    expected_model_calls: int,
 ) -> None:
     service, assessments, reviews = _governance(db_session)
     assessment_id = _create_processing(assessments)
@@ -190,6 +194,16 @@ def test_each_execution_mode_can_pause_and_resume_on_approval(
     assert state is not None
     assert state.review_status == HumanReviewStatus.PENDING
     assert state.candidate_result is not None
+    assert state.telemetry.execution_mode == execution.execution_mode  # type: ignore[union-attr]
+    assert state.telemetry.execution_duration_ms == 12
+    assert state.telemetry.model_call_count == expected_model_calls
+    assert state.telemetry.tool_call_count == 0
+    assert state.telemetry.human_review_status == HumanReviewStatus.PENDING
+    assert [event.event_type.value for event in state.telemetry.events] == [
+        "assessment_started",
+        "quality_gate_evaluated",
+        "human_review_requested",
+    ]
 
     decision = service.approve(
         assessment_id,

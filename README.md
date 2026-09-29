@@ -695,19 +695,25 @@ Prompts and raw provider conversations are not passed between agents.
 ### Execution modes and precedence
 
 ```text
-MULTI_AGENT_WORKFLOW_ENABLED=false + AGENTIC_WORKFLOW_ENABLED=false
-    → deterministic V3 mode
+EXECUTION_MODE_OVERRIDE is set
+    → force deterministic, single_agent, or multi_agent
 
-MULTI_AGENT_WORKFLOW_ENABLED=false + AGENTIC_WORKFLOW_ENABLED=true
-    → V4 single-agent mode
+Otherwise, when EXECUTION_ROUTING_ENABLED=true
+    → deterministic request router selects the mode from workload characteristics
+    → AGENTIC_WORKFLOW_ENABLED controls single-agent availability
+    → MULTI_AGENT_WORKFLOW_ENABLED controls multi-agent availability
+    → unavailable preferred modes fall back multi-agent → single-agent → deterministic
 
-MULTI_AGENT_WORKFLOW_ENABLED=true
-    → V5 multi-agent mode, regardless of the V4 flag
+Otherwise
+    → preserve legacy flag selection: V5 > V4 > deterministic
 ```
 
-Both workflow flags default to `false`; V5 is never mandatory. New execution metadata uses
-`deterministic`, `single_agent`, or `multi_agent`. Historical V4 JSON containing `agentic` and
-historical rows with no execution metadata remain readable.
+Routing never reads `industry` and the request schema contains no route override. It uses bounded
+counts of pain points and constraints plus workload-language signals for independent data,
+integration, security/privacy, governance/risk, operations, and people/change concerns. Execution
+metadata uses `deterministic`, `single_agent`, or `multi_agent` and includes public-safe
+`preferred_execution_mode`, `routing_reason_codes`, and `fallback_reason_codes`. Historical V4
+JSON containing `agentic` and historical rows with no execution metadata remain readable.
 
 ### Failure and degraded-mode policy
 
@@ -749,9 +755,9 @@ observation events, never private chain-of-thought.
 ```text
 Assessment Service
         │
-        ├── AGENTIC_WORKFLOW_ENABLED=false ──→ deterministic V3 RAG flow
+        ├── execution router ──→ deterministic V3 RAG flow
         │
-        └── AGENTIC_WORKFLOW_ENABLED=true
+        └── execution router ──→ single-agent V4 flow
                          │
                          ▼
                      LangGraph
@@ -772,16 +778,15 @@ synthesis with available context; an explicit agent failure terminates safely.
 ### V4 deterministic versus single-agent execution
 
 ```dotenv
-AGENTIC_WORKFLOW_ENABLED=false
-# Existing V3 deterministic request/retrieval/synthesis behavior
+EXECUTION_ROUTING_ENABLED=true
+# Per-request workload routing across all three existing modes
 
 AGENTIC_WORKFLOW_ENABLED=true
-# V4 LangGraph single-agent reason/act/observe/synthesize behavior
+# Make V4 LangGraph available to the router
 ```
 
-The default is `false` when V5 is also disabled. `RAG_ENABLED` continues to control retrieval in
-deterministic mode. In single-agent mode the agent chooses whether to invoke retrieval through its
-tool registry. Both modes
+`RAG_ENABLED` continues to control retrieval in deterministic mode. In single-agent mode the agent
+chooses whether to invoke retrieval through its tool registry. Both modes
 reuse the same V3 retrieval, evidence, prompt, structured result, and citation-sanitization logic.
 
 ### Approved tools
@@ -915,6 +920,8 @@ AGENT_MAX_TOOL_CALLS=5
 LANGGRAPH_RECURSION_LIMIT=25
 
 MULTI_AGENT_WORKFLOW_ENABLED=false
+EXECUTION_ROUTING_ENABLED=true
+# EXECUTION_MODE_OVERRIDE=deterministic
 EVIDENCE_AGENT_MAX_STEPS=4
 EVIDENCE_AGENT_MAX_TOOL_CALLS=4
 MULTI_AGENT_MAX_FAILURES=2

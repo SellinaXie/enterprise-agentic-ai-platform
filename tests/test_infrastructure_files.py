@@ -11,7 +11,9 @@ def test_runtime_container_is_python_312_non_root_and_health_checked() -> None:
     assert "FROM python:3.12.12-slim-bookworm AS base" in dockerfile
     assert "USER app" in dockerfile
     assert "HEALTHCHECK" in dockerfile
-    assert 'CMD ["python", "-m", "app.server"]' in dockerfile
+    assert "alembic upgrade head" in dockerfile
+    assert "exec python -m app.server" in dockerfile
+    assert dockerfile.index("alembic upgrade head") < dockerfile.index("exec python -m app.server")
     assert 'os.getenv(\\"PORT\\", \\"8000\\")' in dockerfile
     assert "--reload" not in dockerfile
     assert "COPY .env" not in dockerfile

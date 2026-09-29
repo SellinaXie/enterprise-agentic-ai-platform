@@ -45,6 +45,7 @@ from app.runtime.gate import RuntimeRiskGate
 from app.runtime.metrics import RuntimeMetricsRecorder
 from app.runtime.models import RuntimeRiskPolicy
 from app.services.assessments import AssessmentGenerator, AssessmentService
+from app.services.execution_router import ExecutionMode, ExecutionRouter
 from app.services.llm import ProviderAssessmentGenerator
 from app.services.product_read import ProductReadService
 from app.services.runtime_governance import RuntimeGovernanceService
@@ -405,8 +406,16 @@ def get_agentic_assessment_workflow(
     tools: Annotated[ToolRegistry, Depends(get_agent_tool_registry)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AgenticAssessmentWorkflow | None:
-    """Compile the V4 graph only when the explicit feature flag is enabled."""
-    if not settings.agentic_workflow_enabled or settings.multi_agent_workflow_enabled:
+    """Build V4 when available, forced, or selected by legacy flag precedence."""
+    forced_single_agent = settings.execution_mode_override == ExecutionMode.SINGLE_AGENT.value
+    if settings.execution_mode_override is not None and not forced_single_agent:
+        return None
+    if settings.execution_mode_override is None and settings.execution_routing_enabled:
+        if not settings.agentic_workflow_enabled:
+            return None
+    elif settings.execution_mode_override is None and (
+        not settings.agentic_workflow_enabled or settings.multi_agent_workflow_enabled
+    ):
         return None
     return AgenticAssessmentWorkflow(
         agent=agent,
@@ -474,8 +483,11 @@ def get_multi_agent_assessment_workflow(
     synthesis: Annotated[OpenAISynthesisAgent, Depends(get_synthesis_agent)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> MultiAgentAssessmentWorkflow | None:
-    """Compile V5 only when its higher-precedence feature flag is enabled."""
-    if not settings.multi_agent_workflow_enabled:
+    """Build V5 when available, forced, or selected by legacy flag precedence."""
+    forced_multi_agent = settings.execution_mode_override == ExecutionMode.MULTI_AGENT.value
+    if settings.execution_mode_override is not None and not forced_multi_agent:
+        return None
+    if settings.execution_mode_override is None and not settings.multi_agent_workflow_enabled:
         return None
     return MultiAgentAssessmentWorkflow(
         evidence=evidence,
@@ -484,6 +496,17 @@ def get_multi_agent_assessment_workflow(
         synthesis=synthesis,
         max_failures=settings.multi_agent_max_failures,
     )
+
+
+def get_execution_router(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ExecutionRouter | None:
+    """Apply the sole forced override, otherwise enable per-request routing."""
+    if settings.execution_mode_override is not None:
+        return ExecutionRouter(forced_mode=settings.execution_mode_override)
+    if settings.execution_routing_enabled:
+        return ExecutionRouter()
+    return None
 
 
 def get_assessment_service(
@@ -504,6 +527,7 @@ def get_assessment_service(
     runtime_governance: Annotated[
         RuntimeGovernanceService, Depends(get_runtime_governance_service)
     ],
+    execution_router: Annotated[ExecutionRouter | None, Depends(get_execution_router)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AssessmentService:
     """Compose the service from provider and persistence boundaries."""
@@ -514,4 +538,5 @@ def get_assessment_service(
         agentic_workflow=agentic_workflow,
         multi_agent_workflow=multi_agent_workflow,
         runtime_governance=(runtime_governance if settings.runtime_risk_gate_enabled else None),
+        execution_router=execution_router,
     )

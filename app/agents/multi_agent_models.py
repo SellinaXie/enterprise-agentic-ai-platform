@@ -195,6 +195,9 @@ class MultiAgentExecutionMetadata(SpecialistModel):
 
     request_id: str | None = Field(default=None, max_length=128)
     execution_mode: Literal["multi_agent"] = "multi_agent"
+    preferred_execution_mode: Literal["deterministic", "single_agent", "multi_agent"] | None = None
+    routing_reason_codes: list[str] = Field(default_factory=list, max_length=12)
+    fallback_reason_codes: list[str] = Field(default_factory=list, max_length=12)
     agents: list[MultiAgentName] = Field(
         default_factory=lambda: [
             MultiAgentName.EVIDENCE,

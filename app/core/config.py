@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     multi_agent_max_failures: int = Field(default=2, ge=0, le=2)
     specialist_retry_limit: int = Field(default=1, ge=0, le=3)
 
+    execution_routing_enabled: bool = True
+    execution_mode_override: Literal["deterministic", "single_agent", "multi_agent"] | None = None
+
     runtime_risk_gate_enabled: bool = False
     runtime_medium_risk_decision: Literal[
         "auto_complete", "complete_with_warning", "require_human_review", "block_and_escalate"

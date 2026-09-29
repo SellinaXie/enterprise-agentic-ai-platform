@@ -30,6 +30,13 @@ from app.schemas.assessment import (
     AssessmentResult,
 )
 from app.services.assessment_prompt import AssessmentPrompt, build_assessment_prompt
+from app.services.execution_router import (
+    ExecutionMode,
+    ExecutionRoutingDecision,
+    FallbackReasonCode,
+    ResolvedExecutionRoute,
+    RoutingReasonCode,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +150,12 @@ class RuntimeGovernanceProtocol(Protocol):
     ) -> PersistedAssessment: ...
 
 
+class ExecutionRouterProtocol(Protocol):
+    """Per-request workflow selection boundary."""
+
+    def route(self, request: AssessmentRequest) -> ExecutionRoutingDecision: ...
+
+
 class AssessmentService:
     """Coordinate generation and explicit persistence transaction boundaries."""
 
@@ -154,6 +167,7 @@ class AssessmentService:
         agentic_workflow: AgenticAssessmentWorkflowProtocol | None = None,
         multi_agent_workflow: MultiAgentAssessmentWorkflowProtocol | None = None,
         runtime_governance: RuntimeGovernanceProtocol | None = None,
+        execution_router: ExecutionRouterProtocol | None = None,
     ) -> None:
         self._generator = generator
         self._repository = repository
@@ -161,6 +175,7 @@ class AssessmentService:
         self._agentic_workflow = agentic_workflow
         self._multi_agent_workflow = multi_agent_workflow
         self._runtime_governance = runtime_governance
+        self._execution_router = execution_router
 
     def generate_assessment(
         self,
@@ -205,25 +220,53 @@ class AssessmentService:
         generation_started = perf_counter()
 
         evidence: tuple[RetrievedEvidence, ...] = ()
-        execution: ExecutionMetadata = DeterministicExecutionMetadata()
+        routing = self._route_execution(request)
+        routing_metadata: dict[str, Any] = {}
+        if self._execution_router is not None:
+            routing_metadata = {
+                "preferred_execution_mode": routing.preferred_execution_mode.value,
+                "routing_reason_codes": [
+                    reason.value for reason in routing.routing_reason_codes
+                ],
+                "fallback_reason_codes": [
+                    reason.value for reason in routing.fallback_reason_codes
+                ],
+            }
+        execution: ExecutionMetadata = DeterministicExecutionMetadata(**routing_metadata)
         retrieval_duration_ms: int | None = None
+        logger.info(
+            "assessment_execution_routed",
+            extra={
+                **log_context,
+                "preferred_execution_mode": routing.preferred_execution_mode.value,
+                "execution_mode": routing.execution_mode.value,
+                "routing_reason_codes": routing_metadata.get("routing_reason_codes", []),
+                "fallback_reason_codes": routing_metadata.get("fallback_reason_codes", []),
+            },
+        )
         try:
-            if self._multi_agent_workflow is not None:
+            if routing.execution_mode == ExecutionMode.MULTI_AGENT:
+                assert self._multi_agent_workflow is not None
                 workflow_result = self._multi_agent_workflow.run(
                     assessment_id=str(assessment_id),
                     request=request,
                 )
                 result = workflow_result.result
                 evidence = workflow_result.evidence
-                execution = workflow_result.execution
-            elif self._agentic_workflow is not None:
+                execution = workflow_result.execution.model_copy(
+                    update=routing_metadata
+                )
+            elif routing.execution_mode == ExecutionMode.SINGLE_AGENT:
+                assert self._agentic_workflow is not None
                 workflow_result = self._agentic_workflow.run(
                     assessment_id=str(assessment_id),
                     request=request,
                 )
                 result = workflow_result.result
                 evidence = workflow_result.evidence
-                execution = workflow_result.execution
+                execution = workflow_result.execution.model_copy(
+                    update=routing_metadata
+                )
             else:
                 rag_context = None
                 if self._rag_service is not None:
@@ -316,6 +359,53 @@ class AssessmentService:
             extra={**log_context, "status": completed_record.status.value},
         )
         return self._to_response(completed_record)
+
+    def _route_execution(self, request: AssessmentRequest) -> ResolvedExecutionRoute:
+        if self._execution_router is None:
+            if self._multi_agent_workflow is not None:
+                mode = ExecutionMode.MULTI_AGENT
+            elif self._agentic_workflow is not None:
+                mode = ExecutionMode.SINGLE_AGENT
+            else:
+                mode = ExecutionMode.DETERMINISTIC
+            return ResolvedExecutionRoute(
+                preferred_execution_mode=mode,
+                execution_mode=mode,
+                routing_reason_codes=[RoutingReasonCode.LEGACY_FLAG_SELECTION],
+            )
+
+        decision = self._execution_router.route(request)
+        preferred = decision.preferred_execution_mode
+        actual = preferred
+        fallback_reasons: list[FallbackReasonCode] = []
+        if preferred == ExecutionMode.MULTI_AGENT and self._multi_agent_workflow is None:
+            fallback_reasons.append(FallbackReasonCode.MULTI_AGENT_CAPABILITY_UNAVAILABLE)
+            if self._agentic_workflow is not None:
+                actual = ExecutionMode.SINGLE_AGENT
+                fallback_reasons.append(FallbackReasonCode.FALLBACK_TO_SINGLE_AGENT)
+            else:
+                actual = ExecutionMode.DETERMINISTIC
+                fallback_reasons.extend(
+                    [
+                        FallbackReasonCode.SINGLE_AGENT_CAPABILITY_UNAVAILABLE,
+                        FallbackReasonCode.FALLBACK_TO_DETERMINISTIC,
+                    ]
+                )
+        elif preferred == ExecutionMode.SINGLE_AGENT and self._agentic_workflow is None:
+            actual = ExecutionMode.DETERMINISTIC
+            fallback_reasons.extend(
+                [
+                    FallbackReasonCode.SINGLE_AGENT_CAPABILITY_UNAVAILABLE,
+                    FallbackReasonCode.FALLBACK_TO_DETERMINISTIC,
+                ]
+            )
+
+        return ResolvedExecutionRoute(
+            preferred_execution_mode=preferred,
+            execution_mode=actual,
+            routing_reason_codes=decision.reason_codes,
+            fallback_reason_codes=fallback_reasons,
+        )
 
     def get_assessment(self, assessment_id: UUID) -> AssessmentResponse:
         """Retrieve and validate persisted assessment state by ID."""

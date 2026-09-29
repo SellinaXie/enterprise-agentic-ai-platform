@@ -134,9 +134,10 @@ def test_historical_v4_agentic_metadata_remains_readable() -> None:
     assert parsed.execution_mode == "agentic"
 
 
-def test_multi_agent_flag_suppresses_v4_graph_construction() -> None:
+def test_multi_agent_flag_suppresses_v4_graph_construction_in_legacy_mode() -> None:
     settings = Settings(
         _env_file=None,
+        EXECUTION_ROUTING_ENABLED=False,
         AGENTIC_WORKFLOW_ENABLED=True,
         MULTI_AGENT_WORKFLOW_ENABLED=True,
     )

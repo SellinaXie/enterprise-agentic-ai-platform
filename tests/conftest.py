@@ -33,6 +33,7 @@ def settings(database_url: str) -> Settings:
         APP_LOG_LEVEL="ERROR",
         DATABASE_URL=database_url,
         OPENAI_API_KEY=None,
+        EXECUTION_ROUTING_ENABLED=False,
     )
 
 
