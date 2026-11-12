@@ -123,7 +123,11 @@ class Settings(BaseSettings):
     evaluation_judge_model: str = "gpt-4.1-mini"
 
     auth_enabled: bool = False
-    auth_jwt_algorithm: Literal["HS256", "RS256"] = "HS256"
+    auth_jwt_algorithm: Literal["HS256", "RS256", "EdDSA"] = "HS256"
+    # Neon identities receive only roles explicitly assigned by the workspace owner.
+    auth_subject_roles: dict[str, list[Literal["analyst", "reviewer", "admin"]]] = Field(
+        default_factory=dict
+    )
     auth_jwt_verification_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices(
@@ -265,8 +269,10 @@ class Settings(BaseSettings):
             parsed_jwks = urlsplit(self.auth_jwks_url)
             if parsed_jwks.scheme not in {"http", "https"} or not parsed_jwks.netloc:
                 raise ValueError("AUTH_JWKS_URL must be a valid HTTP(S) URL")
-            if self.auth_jwt_algorithm != "RS256":
-                raise ValueError("AUTH_JWKS_URL requires AUTH_JWT_ALGORITHM=RS256")
+            if self.auth_jwt_algorithm not in {"RS256", "EdDSA"}:
+                raise ValueError("AUTH_JWKS_URL requires AUTH_JWT_ALGORITHM=RS256 or EdDSA")
+        if self.auth_jwt_algorithm == "EdDSA" and not self.auth_jwks_url:
+            raise ValueError("EdDSA requires AUTH_JWKS_URL")
         if not self.auth_jwt_issuer or not self.auth_jwt_audience:
             raise ValueError(
                 "AUTH_JWT_ISSUER and AUTH_JWT_AUDIENCE are required when authentication is enabled"

@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -339,4 +340,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return application
 
 
-app = create_app()
+def _entrypoint_settings() -> Settings | None:
+    if os.environ.get("VERCEL"):
+        from app.core.vercel import vercel_settings
+
+        return vercel_settings()
+    return None
+
+
+# Keep the ASGI instance at module scope so Vercel can discover the Python handler.
+app = create_app(_entrypoint_settings())
