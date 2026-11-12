@@ -13,15 +13,37 @@
       "entrypoint": "app.main:app",
       "buildCommand": "python -m scripts.check_vercel_settings",
       "functions": {
-        "app/main.py": { "maxDuration": 300 }
+        "app/main.py": {
+          "maxDuration": 300
+        }
       },
       "rewrites": [
-        { "source": "/backend/:path*", "destination": "/:path*" }
+        {
+          "source": "/backend/:path*",
+          "destination": "/:path*"
+        }
       ]
     }
   },
   "rewrites": [
-    { "source": "/backend/:path*", "destination": { "service": "backend" } },
-    { "source": "/:path*", "destination": { "service": "frontend" } }
+    {
+      "source": "/backend/:path*",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/",
+      "destination": {
+        "service": "frontend",
+        "path": "/"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "frontend"
+      }
+    }
   ]
 }
