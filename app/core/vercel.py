@@ -18,5 +18,12 @@ def vercel_settings() -> Settings:
         AUTH_ENABLED=True,
         APP_DEBUG=False,
         LOG_EXCEPTION_TRACEBACKS=False,
+        # Vercel Secret names cannot be changed after creation. Accept the
+        # owner's existing name without reading the value back through the API.
+        openai_api_key=(
+            os.environ.get("OPENAI_API_KEY", "").strip()
+            or os.environ.get("OpenAI", "").strip()  # noqa: SIM112
+            or None
+        ),
         trusted_hosts=",".join(dict.fromkeys(host.strip() for host in hosts if host.strip())),
     )

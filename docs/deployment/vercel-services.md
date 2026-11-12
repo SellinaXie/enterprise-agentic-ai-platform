@@ -48,5 +48,26 @@ readiness. Never run migrations against an unverified production database.
 6. With an existing analyst identity, create and retrieve a synthetic assessment.
 7. Verify reviewer access is still role restricted before promoting a tested production build.
 
-The existing UI accepts signed bearer tokens. This deployment configuration does
-not implement an authorization-code browser SSO flow or issue test users.
+## Managed sign-in
+
+Set `NEXT_PUBLIC_AUTH_MODE=neon`, `NEON_AUTH_BASE_URL` and a private, randomly
+generated `NEON_AUTH_COOKIE_SECRET` to use invited-email verification codes.
+Production and Preview use separate Neon branches, URLs, cookies and database
+credentials. Registration is closed; create invited identities in Neon first.
+No visitor receives a workspace role automatically.
+
+The browser uses the same-origin `/api/auth/*` SDK proxy and HTTP-only session
+cookies. A fresh short-lived JWT is requested for backend calls. Application page
+layouts check the server session; FastAPI independently validates the signature,
+issuer, audience, expiry and assigned workspace role.
+
+Neon uses EdDSA. Set `AUTH_JWT_ALGORITHM=EdDSA`, `AUTH_JWKS_URL` to the branch's
+JWKS endpoint, and both `AUTH_JWT_ISSUER` and `AUTH_JWT_AUDIENCE` to the **origin**
+of the branch's auth URL (without its database/auth path). Leave
+`AUTH_JWT_VERIFICATION_KEY` unset or empty. `AUTH_SUBJECT_ROLES` is a private JSON
+map of provisioned identity IDs to application roles, for example
+`{"invited-user-id":["analyst"]}`. Assign the owner's exact identity ID explicitly;
+never use first-signup-as-admin or trust Neon's generic `authenticated` role.
+
+Without managed mode, the existing signed bearer-token login remains available
+for local development and deployments using their own token issuer.

@@ -340,9 +340,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return application
 
 
-if os.environ.get("VERCEL"):
-    from app.core.vercel import vercel_settings
+def _entrypoint_settings() -> Settings | None:
+    if os.environ.get("VERCEL"):
+        from app.core.vercel import vercel_settings
 
-    app = create_app(vercel_settings())
-else:
-    app = create_app()
+        return vercel_settings()
+    return None
+
+
+# Keep the ASGI instance at module scope so Vercel can discover the Python handler.
+app = create_app(_entrypoint_settings())

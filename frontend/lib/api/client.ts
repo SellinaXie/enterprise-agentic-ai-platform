@@ -43,7 +43,10 @@ export function setAccessToken(token: string | null): void {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<ApiResult<T>> {
-  const token = getAccessToken();
+  const managed = process.env.NEXT_PUBLIC_AUTH_MODE === "neon";
+  const token = managed
+    ? await (await import("@/lib/auth/client")).getManagedAccessToken()
+    : getAccessToken();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
   if (!headers.has("X-Request-ID")) headers.set("X-Request-ID", crypto.randomUUID());

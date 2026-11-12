@@ -58,3 +58,11 @@ def test_vercel_uses_defaults_for_empty_optional_settings(
     assert settings.rag_enabled is False
     assert settings.auth_jwt_algorithm == "HS256"
     assert settings.database_connect_timeout_seconds == 5
+
+
+def test_vercel_accepts_existing_named_openai_secret(
+    vercel_environment: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+    monkeypatch.setenv("OpenAI", "owner-supplied-test-key")
+    assert vercel_settings().openai_api_key is not None
