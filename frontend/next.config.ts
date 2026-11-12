@@ -29,6 +29,11 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
+    // In a Vercel Services deployment, the platform routes /backend directly to
+    // FastAPI. Keep the external proxy for standalone frontend/Render installs.
+    if (process.env.VERCEL && !process.env.API_INTERNAL_URL && !process.env.API_INTERNAL_HOSTPORT) {
+      return [];
+    }
     return [
       {
         source: "/backend/:path*",

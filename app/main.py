@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import logging
+import os
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -339,4 +340,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return application
 
 
-app = create_app()
+if os.environ.get("VERCEL"):
+    from app.core.vercel import vercel_settings
+
+    app = create_app(vercel_settings())
+else:
+    app = create_app()
