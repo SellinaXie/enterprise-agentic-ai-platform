@@ -26,7 +26,9 @@ def test_vercel_enforces_production_auth(vercel_environment: None) -> None:
     assert settings.auth_enabled is True
     assert settings.debug is False
     assert settings.parsed_trusted_hosts == [
-        "app.example.com", "project-preview.vercel.app", "project.vercel.app"
+        "app.example.com",
+        "project-preview.vercel.app",
+        "project.vercel.app",
     ]
 
 

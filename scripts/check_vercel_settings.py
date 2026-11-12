@@ -13,9 +13,13 @@ def main() -> int:
     except ValidationError as exc:
         print("Vercel backend configuration is not ready:")
         for key in (
-            "DATABASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-            "AUTH_JWT_VERIFICATION_KEY", "AUTH_JWKS_URL",
-            "AUTH_JWT_ISSUER", "AUTH_JWT_AUDIENCE",
+            "DATABASE_URL",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "AUTH_JWT_VERIFICATION_KEY",
+            "AUTH_JWKS_URL",
+            "AUTH_JWT_ISSUER",
+            "AUTH_JWT_AUDIENCE",
         ):
             value = os.environ.get(key)
             state = "missing" if value is None else "empty" if not value.strip() else "set"

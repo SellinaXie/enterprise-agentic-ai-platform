@@ -225,12 +225,8 @@ class AssessmentService:
         if self._execution_router is not None:
             routing_metadata = {
                 "preferred_execution_mode": routing.preferred_execution_mode.value,
-                "routing_reason_codes": [
-                    reason.value for reason in routing.routing_reason_codes
-                ],
-                "fallback_reason_codes": [
-                    reason.value for reason in routing.fallback_reason_codes
-                ],
+                "routing_reason_codes": [reason.value for reason in routing.routing_reason_codes],
+                "fallback_reason_codes": [reason.value for reason in routing.fallback_reason_codes],
             }
         execution: ExecutionMetadata = DeterministicExecutionMetadata(**routing_metadata)
         retrieval_duration_ms: int | None = None
@@ -253,9 +249,7 @@ class AssessmentService:
                 )
                 result = workflow_result.result
                 evidence = workflow_result.evidence
-                execution = workflow_result.execution.model_copy(
-                    update=routing_metadata
-                )
+                execution = workflow_result.execution.model_copy(update=routing_metadata)
             elif routing.execution_mode == ExecutionMode.SINGLE_AGENT:
                 assert self._agentic_workflow is not None
                 workflow_result = self._agentic_workflow.run(
@@ -264,9 +258,7 @@ class AssessmentService:
                 )
                 result = workflow_result.result
                 evidence = workflow_result.evidence
-                execution = workflow_result.execution.model_copy(
-                    update=routing_metadata
-                )
+                execution = workflow_result.execution.model_copy(update=routing_metadata)
             else:
                 rag_context = None
                 if self._rag_service is not None:
