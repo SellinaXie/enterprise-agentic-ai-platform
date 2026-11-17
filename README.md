@@ -7,18 +7,21 @@ deployment, recovery, and one bounded enterprise connector.
 
 ## V8D Deployment and Enterprise Integration
 
-V8D completes the planned portfolio scope without adding another AI execution mode. The root
-[`render.yaml`](render.yaml) describes a Render deployment with one non-root FastAPI Docker service,
-private PostgreSQL 16, pgvector migrations, health checks, and a pre-deploy Alembic release step.
-The Next.js frontend deploys independently to Vercel. The API honors the platform-assigned port and
-accepts managed PostgreSQL connection strings. A
-protected, manually dispatched GitHub workflow can trigger a configured deploy hook and verify
-public liveness; no cloud account, paid resource, or secret is created by this repository.
+V8D completes the planned portfolio scope without adding another AI execution mode. The frontend (Next.js) and the backend (FastAPI) deploy together as two services in one Vercel project: the frontend serves `/` and the backend serves `/backend/*`.
+
+Verify before trusting a deployment:
+
+```
+curl --fail-with-body https://enterprise-agentic-ai-platform-eight.vercel.app/backend/health
+curl --fail-with-body https://enterprise-agentic-ai-platform-eight.vercel.app/backend/readiness
+```
+
+`/health` proves process liveness. `/readiness` additionally checks production configuration, database connectivity, current Alembic head, and required tables.
 
 `/`, `/demo`, and `/architecture` are the public portfolio showcase: a landing overview, a one-click
 guided walkthrough, and the design rationale, all built from static content. None of them mount
-authentication, read a JWT, or call the backend, so they render the same whether or not the Render
-API is deployed. `/demo` walks through the V0–V8 architecture journey plus architecture, evidence,
+authentication, read a JWT, or call the backend, so they render the same whether or not the backend
+is deployed. `/demo` walks through the V0–V8 architecture journey plus architecture, evidence,
 risk, runtime governance, human review, and operations. The authenticated product now lives at
 `/dashboard` and the other application routes, separately protected by OIDC/JWKS and RBAC. The
 intended custom domains are `demo.sellinaxie.com` for the showcase and `app.sellinaxie.com` for the
@@ -33,8 +36,7 @@ deferred because the connector exposes only one static read operation.
 
 Operational and portfolio artifacts:
 
-- [Vercel + Render deployment guide](docs/deployment/vercel-render.md),
-  [Render backend guide](docs/deployment/render.md), and
+- [Vercel Services deployment guide](docs/deployment/vercel-services.md) and
   [backup/restore runbook](docs/operations/backup-restore.md);
 - [observability boundary](docs/operations/observability.md) and
   [policy connector contract](docs/connectors/policy-repository.md);
