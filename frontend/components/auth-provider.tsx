@@ -62,7 +62,18 @@ export function AuthProvider({ children }: Readonly<{ children: React.ReactNode 
     [loadPrincipal],
   );
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    if (process.env.NEXT_PUBLIC_AUTH_MODE === "neon") {
+      try {
+        const { managedAuth } = await import("@/lib/auth/client");
+        const result = await managedAuth.signOut();
+        if (result.error) throw new Error("Sign-out failed. Please try again.");
+      } catch {
+        setError("Sign-out failed. Please try again.");
+        setStatus("error");
+        return;
+      }
+    }
     setAccessToken(null);
     setPrincipal(null);
     setStatus("unauthenticated");

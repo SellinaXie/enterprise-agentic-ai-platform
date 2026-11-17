@@ -25,6 +25,8 @@ def get_token_verifier(
             jwks_url=settings.auth_jwks_url,
             issuer=settings.auth_jwt_issuer,
             audience=settings.auth_jwt_audience,
+            algorithm=settings.auth_jwt_algorithm,
+            subject_roles=settings.auth_subject_roles,
             leeway_seconds=settings.auth_jwt_leeway_seconds,
             cache_seconds=settings.auth_jwks_cache_seconds,
             timeout_seconds=settings.auth_jwks_timeout_seconds,

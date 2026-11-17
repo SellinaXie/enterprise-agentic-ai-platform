@@ -62,7 +62,7 @@ class LocalJWTVerifier:
 
 
 class OIDCJWKSVerifier:
-    """Verify externally issued RS256 tokens using a cached JWKS resolver."""
+    """Verify externally issued tokens using a pinned algorithm and JWKS resolver."""
 
     def __init__(
         self,
@@ -70,11 +70,17 @@ class OIDCJWKSVerifier:
         jwks_url: str,
         issuer: str,
         audience: str,
+        algorithm: str = "RS256",
+        subject_roles: dict[str, list[str]] | None = None,
         leeway_seconds: int = 0,
         cache_seconds: int = 300,
         timeout_seconds: int = 5,
         key_resolver: SigningKeyResolver | None = None,
     ) -> None:
+        if algorithm not in {"RS256", "EdDSA"}:
+            raise ValueError("Unsupported JWKS signing algorithm")
+        self._algorithm = algorithm
+        self._subject_roles = subject_roles or {}
         self._issuer = issuer
         self._audience = audience
         self._leeway_seconds = leeway_seconds
@@ -92,12 +98,18 @@ class OIDCJWKSVerifier:
             claims = jwt.decode(
                 token,
                 signing_key.key,
-                algorithms=["RS256"],
+                algorithms=[self._algorithm],
                 issuer=self._issuer,
                 audience=self._audience,
                 leeway=self._leeway_seconds,
                 options={"require": ["exp", "sub", "iss", "aud"]},
             )
+            if self._algorithm == "EdDSA":
+                # Managed Neon tokens have a generic 'authenticated' role. Never
+                # interpret that or user metadata as an application permission.
+                claims = {**claims, "roles": self._subject_roles.get(claims.get("sub"), [])}
+                if claims.get("banned") is True:
+                    raise AuthenticationRequiredError
             return principal_from_claims(claims)
         except (InvalidTokenError, PyJWKClientError, TypeError, ValueError, KeyError):
             raise AuthenticationRequiredError from None
