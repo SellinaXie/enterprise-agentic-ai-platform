@@ -325,5 +325,6 @@ class CandidateVersionRecord(RuntimeModel):
     result: dict[str, Any]
     execution: dict[str, Any] | None
     gate_result: QualityGateResult
+    policy_fingerprint: str | None = None
     feedback_review_id: UUID | None
     created_at: datetime

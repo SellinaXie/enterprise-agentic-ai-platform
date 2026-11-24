@@ -206,8 +206,14 @@ class AssessmentService:
         request: AssessmentRequest,
         *,
         principal: AuthenticatedPrincipal | None = None,
+        requested_execution_mode: ExecutionMode | None = None,
     ) -> AssessmentResponse:
-        """Persist lifecycle state around synchronous structured generation."""
+        """Persist lifecycle state around synchronous structured generation.
+
+        ``requested_execution_mode`` is accepted only from demo deployments (the route checks
+        the switch); it takes precedence over routing and still goes through capability
+        fallback, recorded honestly in the execution metadata.
+        """
         assessment_id = uuid4()
         log_context = {"assessment_id": str(assessment_id)}
 
@@ -244,9 +250,9 @@ class AssessmentService:
         generation_started = perf_counter()
 
         evidence: tuple[RetrievedEvidence, ...] = ()
-        routing = self._route_execution(request)
+        routing = self._route_execution(request, requested_execution_mode)
         routing_metadata: dict[str, Any] = {}
-        if self._execution_router is not None:
+        if self._execution_router is not None or requested_execution_mode is not None:
             routing_metadata = {
                 "preferred_execution_mode": routing.preferred_execution_mode.value,
                 "routing_reason_codes": [reason.value for reason in routing.routing_reason_codes],
@@ -479,7 +485,17 @@ class AssessmentService:
             gate_result=status.gate_result,
         )
 
-    def _route_execution(self, request: AssessmentRequest) -> ResolvedExecutionRoute:
+    def _route_execution(
+        self,
+        request: AssessmentRequest,
+        requested_execution_mode: ExecutionMode | None = None,
+    ) -> ResolvedExecutionRoute:
+        if requested_execution_mode is not None:
+            decision = ExecutionRoutingDecision(
+                preferred_execution_mode=requested_execution_mode,
+                reason_codes=[RoutingReasonCode.CALLER_REQUESTED_MODE],
+            )
+            return self._resolve_capabilities(decision)
         if self._execution_router is None:
             if self._multi_agent_workflow is not None:
                 mode = ExecutionMode.MULTI_AGENT
@@ -493,7 +509,9 @@ class AssessmentService:
                 routing_reason_codes=[RoutingReasonCode.LEGACY_FLAG_SELECTION],
             )
 
-        decision = self._execution_router.route(request)
+        return self._resolve_capabilities(self._execution_router.route(request))
+
+    def _resolve_capabilities(self, decision: ExecutionRoutingDecision) -> ResolvedExecutionRoute:
         preferred = decision.preferred_execution_mode
         actual = preferred
         fallback_reasons: list[FallbackReasonCode] = []

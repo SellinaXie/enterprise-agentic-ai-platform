@@ -45,6 +45,7 @@ class AssessmentCandidateVersionModel(Base):
     execution_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON_PAYLOAD, nullable=True)
     gate_decision: Mapped[str] = mapped_column(String(40), nullable=False)
     gate_result: Mapped[dict[str, Any]] = mapped_column(JSON_PAYLOAD, nullable=False)
+    policy_fingerprint: Mapped[str | None] = mapped_column(String(80), nullable=True)
     feedback_review_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         # Explicit short name: the convention-derived one exceeds PostgreSQL's 63 bytes.

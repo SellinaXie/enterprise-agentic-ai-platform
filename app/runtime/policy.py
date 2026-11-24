@@ -35,6 +35,7 @@ def describe_runtime_policy(
     *,
     runtime_risk_gate_enabled: bool,
     separation_of_duties_enforced: bool,
+    execution_mode_selection_enabled: bool = False,
 ) -> GovernancePolicyResponse:
     """Project the configured policy into a stable public contract with a fingerprint."""
     body = {
@@ -63,6 +64,7 @@ def describe_runtime_policy(
             enforced=separation_of_duties_enforced,
             applies_to=list(SEPARATION_OF_DUTIES_ACTIONS),
         ),
+        "execution_mode_selection_enabled": execution_mode_selection_enabled,
         "reason_codes": list(RuntimeReasonCode),
     }
     unsigned = GovernancePolicyResponse(policy_fingerprint="sha256:pending", **body)

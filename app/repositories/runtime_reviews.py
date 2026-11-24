@@ -192,6 +192,7 @@ class RuntimeReviewRepository:
         execution: Mapping[str, Any] | None,
         gate_result: QualityGateResult,
         feedback_review_id: UUID | None = None,
+        policy_fingerprint: str | None = None,
     ) -> CandidateVersionRecord:
         """Append one gated candidate; existing versions are never updated."""
         model = AssessmentCandidateVersionModel(
@@ -202,6 +203,7 @@ class RuntimeReviewRepository:
             execution_metadata=dict(execution) if execution is not None else None,
             gate_decision=gate_result.decision.value,
             gate_result=gate_result.model_dump(mode="json"),
+            policy_fingerprint=policy_fingerprint,
             feedback_review_id=feedback_review_id,
             created_at=self._clock(),
         )
@@ -276,6 +278,7 @@ def _candidate_version_from_model(
         result=dict(model.result_payload),
         execution=(dict(model.execution_metadata) if model.execution_metadata else None),
         gate_result=QualityGateResult.model_validate(model.gate_result),
+        policy_fingerprint=model.policy_fingerprint,
         feedback_review_id=model.feedback_review_id,
         created_at=_as_utc(model.created_at),
     )

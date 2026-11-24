@@ -109,6 +109,7 @@ class CandidateVersionItem(ProductSchema):
     created_at: datetime
     execution_mode: str | None
     gate_result: QualityGateResult
+    policy_fingerprint: str | None
     result: AssessmentResult
     feedback: CandidateVersionFeedback | None
 
@@ -145,6 +146,7 @@ class GovernancePolicyResponse(ProductSchema):
     fixed_rules: list[PolicyFixedRule]
     max_human_revisions: int = Field(ge=0)
     separation_of_duties: SeparationOfDutiesPolicy
+    execution_mode_selection_enabled: bool
     reason_codes: list[RuntimeReasonCode]
 
 

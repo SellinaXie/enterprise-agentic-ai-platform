@@ -208,7 +208,7 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
     assert identity_columns_removed
     assert runtime_tables_preserved
     assert candidate_versions_removed
-    assert upgrade_revision == "20261124_0007"
+    assert upgrade_revision == "20261124_0008"
     assert candidate_versions_created
     assert assessment_table_created
     assert knowledge_tables_created

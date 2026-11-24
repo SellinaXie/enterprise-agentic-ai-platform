@@ -44,6 +44,8 @@ from app.repositories.runtime_reviews import RuntimeReviewRepository
 from app.runtime.gate import RuntimeRiskGate
 from app.runtime.metrics import RuntimeMetricsRecorder
 from app.runtime.models import RuntimeRiskPolicy
+from app.runtime.policy import describe_runtime_policy
+from app.schemas.product import GovernancePolicyResponse
 from app.services.assessments import AssessmentGenerator, AssessmentService
 from app.services.execution_router import ExecutionMode, ExecutionRouter
 from app.services.llm import ProviderAssessmentGenerator
@@ -129,6 +131,16 @@ def separation_of_duties_enforced(settings: Settings) -> bool:
     return settings.auth_enabled
 
 
+def current_policy_description(settings: Settings) -> GovernancePolicyResponse:
+    """Describe and fingerprint the policy in force, shared by the API and the gate."""
+    return describe_runtime_policy(
+        build_runtime_risk_policy(settings),
+        runtime_risk_gate_enabled=settings.runtime_risk_gate_enabled,
+        separation_of_duties_enforced=separation_of_duties_enforced(settings),
+        execution_mode_selection_enabled=settings.execution_mode_selection_enabled,
+    )
+
+
 def get_runtime_governance_service(
     assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
     reviews: Annotated[RuntimeReviewRepository, Depends(get_runtime_review_repository)],
@@ -148,6 +160,7 @@ def get_runtime_governance_service(
         metrics=metrics,
         telemetry_exporter=telemetry_exporter,
         enforce_separation_of_duties=separation_of_duties_enforced(settings),
+        policy_fingerprint=current_policy_description(settings).policy_fingerprint,
     )
 
 

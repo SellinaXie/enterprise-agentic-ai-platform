@@ -201,7 +201,7 @@ To stop the stack while preserving the application database, run `docker compose
 
 - `GET /health` is process liveness only. It does not query PostgreSQL or a model provider.
 - `GET /readiness` checks critical configuration, database connectivity, Alembic head
-  `20261124_0007`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
+  `20261124_0008`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
   when any check fails. It never calls a provider or exposes a DSN, credential, SQL error, or
   traceback.
 
@@ -285,6 +285,7 @@ POST /api/v1/assessments/{id}/reviews/request-revision
 GET  /api/v1/assessments/{id}/review-candidate
 GET  /api/v1/assessments/{id}/candidate-versions
 POST /api/v1/assessments/{id}/revisions
+GET  /api/v1/assessments/{id}/decision-record
 GET  /api/v1/governance/policy
 ```
 
@@ -305,7 +306,23 @@ approve, reject, or request revision of it (HTTP 403 `self_review_forbidden`; th
 logged as `self_review_denied`). `GET /review-candidate` returns `allowed_actions` and
 `denied_actions` with reason codes so the interface renders only what the backend permits.
 `GET /governance/policy` returns the configured gate thresholds, review triggers, block rules,
-fixed rules, revision limit, and separation-of-duties status with a SHA-256 `policy_fingerprint`.
+fixed rules, revision limit, separation-of-duties status, and whether per-request mode selection
+is enabled, with a SHA-256 `policy_fingerprint`. Each candidate version stores the fingerprint it
+was gated under.
+
+`GET /decision-record` (reviewers and admins) exports, from persisted state only, the input and
+creator, routing (preferred and actual mode with reason and fallback codes), cited evidence
+references (document and chunk IDs and titles, no source text), every candidate version with its
+gate result, policy fingerprint, and triggering feedback, every review event (subject, role,
+issuer, comment, time; no email), and the outcome. `record_fingerprint` is SHA-256 over the
+key-sorted record excluding `generated_at`, so it is stable while the state is unchanged.
+
+Demo deployments can set `EXECUTION_MODE_SELECTION_ENABLED=true` to accept
+`POST /api/v1/assessments?execution_mode=deterministic|single_agent|multi_agent`. The mode is a
+query parameter so it never enters the persisted request or the prompt. It takes precedence over
+routing and `EXECUTION_MODE_OVERRIDE`, records `caller_requested_mode`, and still applies
+capability fallback with its reason codes. With the switch off (the default), the parameter is
+rejected with HTTP 403 `execution_mode_selection_disabled`.
 Authenticated API decisions derive reviewer subject, email, role, issuer, and request ID from the
 verified principal rather than the legacy client reviewer ID. `human_review_events` is append-only
 at the repository boundary.
@@ -1155,7 +1172,10 @@ assessment index.
 Revision `20261124_0007` adds append-only `assessment_candidate_versions` (one row per gated
 candidate, unique per assessment and version number, with the review event that triggered each
 revision). Assessments created before it have no version rows. Its downgrade drops only this
-table. Alembic head is `20261124_0007`.
+table.
+
+Revision `20261124_0008` adds nullable `assessment_candidate_versions.policy_fingerprint`;
+versions written earlier keep `null`. Alembic head is `20261124_0008`.
 
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate

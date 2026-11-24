@@ -3,9 +3,11 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from app.api.dependencies import get_assessment_service, get_runtime_governance_service
+from app.core.config import Settings, get_settings
+from app.core.exceptions import ExecutionModeSelectionDisabledError
 from app.identity.dependencies import get_authenticated_principal, require_reviewer_or_admin
 from app.identity.models import AuthenticatedPrincipal
 from app.runtime.models import (
@@ -15,6 +17,7 @@ from app.runtime.models import (
     RuntimeStatusResponse,
 )
 from app.schemas.assessment import AssessmentRequest, AssessmentResponse
+from app.schemas.decision_record import DecisionRecordResponse
 from app.schemas.errors import ErrorResponse
 from app.schemas.product import (
     CandidateVersionsResponse,
@@ -22,6 +25,7 @@ from app.schemas.product import (
     RevisionSubmissionResponse,
 )
 from app.services.assessments import AssessmentService
+from app.services.execution_router import ExecutionMode
 from app.services.runtime_governance import RuntimeGovernanceService
 
 router = APIRouter(
@@ -49,9 +53,25 @@ def create_assessment(
     request: AssessmentRequest,
     service: Annotated[AssessmentService, Depends(get_assessment_service)],
     principal: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    execution_mode: Annotated[
+        ExecutionMode | None,
+        Query(
+            description=(
+                "Demo deployments only (EXECUTION_MODE_SELECTION_ENABLED=true): run this "
+                "request in the given mode. Rejected with 403 elsewhere."
+            ),
+        ),
+    ] = None,
 ) -> AssessmentResponse:
     """Validate business context and synchronously generate a structured assessment."""
-    return service.generate_assessment(request, principal=principal)
+    if execution_mode is None:
+        return service.generate_assessment(request, principal=principal)
+    if not settings.execution_mode_selection_enabled:
+        raise ExecutionModeSelectionDisabledError
+    return service.generate_assessment(
+        request, principal=principal, requested_execution_mode=execution_mode
+    )
 
 
 @router.get(
@@ -196,3 +216,18 @@ def request_review_revision(
     principal: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
 ) -> HumanReviewDecision:
     return service.request_revision(assessment_id, request, principal=principal)
+
+
+@router.get(
+    "/{assessment_id}/decision-record",
+    response_model=DecisionRecordResponse,
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+    summary="Export the decision record: input, routing, evidence, versions, reviews, outcome",
+)
+def get_decision_record(
+    assessment_id: UUID,
+    service: Annotated[RuntimeGovernanceService, Depends(get_runtime_governance_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
+) -> DecisionRecordResponse:
+    """Built only from persisted state; the fingerprint is stable while the state is unchanged."""
+    return service.build_decision_record(assessment_id)

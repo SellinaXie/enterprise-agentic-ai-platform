@@ -18,7 +18,7 @@ def alembic_config(output_buffer: StringIO | None = None) -> Config:
 def test_alembic_has_one_linear_head() -> None:
     script = ScriptDirectory.from_config(alembic_config())
 
-    assert script.get_heads() == ["20261124_0007"]
+    assert script.get_heads() == ["20261124_0008"]
     assert script.get_base() == "20260909_0001"
 
 
@@ -55,6 +55,7 @@ def test_initial_migration_renders_postgresql_schema(monkeypatch: MonkeyPatch) -
     assert "CREATE TABLE assessment_candidate_versions" in sql
     assert "uq_assessment_candidate_versions_assessment_id" in sql
     assert "fk_candidate_versions_feedback_review_id" in sql
+    assert "ADD COLUMN policy_fingerprint VARCHAR(80)" in sql
     assert "pending_review" in sql
     assert "DROP CONSTRAINT ck_assessments_assessment_status_values" in sql
     assert "ADD CONSTRAINT ck_assessments_assessment_status_values" in sql
@@ -94,6 +95,22 @@ def test_v8b_identity_migration_renders_postgresql_downgrade(
     assert "DROP COLUMN reviewer_subject" in sql
 
 
+def test_policy_fingerprint_migration_renders_postgresql_downgrade(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    output = StringIO()
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://migration_test:placeholder@localhost/migration_test",
+    )
+
+    command.downgrade(alembic_config(output), "20261124_0008:20261124_0007", sql=True)
+
+    sql = output.getvalue()
+    assert "DROP COLUMN policy_fingerprint" in sql
+    assert "DROP TABLE assessment_candidate_versions" not in sql
+
+
 def test_candidate_versions_migration_renders_postgresql_downgrade(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -103,7 +120,7 @@ def test_candidate_versions_migration_renders_postgresql_downgrade(
         "postgresql+psycopg://migration_test:placeholder@localhost/migration_test",
     )
 
-    command.downgrade(alembic_config(output), "20261124_0007:20260911_0006", sql=True)
+    command.downgrade(alembic_config(output), "20261124_0008:20260911_0006", sql=True)
 
     sql = output.getvalue()
     assert "DROP TABLE assessment_candidate_versions" in sql
