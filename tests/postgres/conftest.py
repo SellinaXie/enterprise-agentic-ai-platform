@@ -154,7 +154,7 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
 
         command.upgrade(_alembic_config(), "head")
 
-        command.downgrade(_alembic_config(), "-1")
+        command.downgrade(_alembic_config(), "20260910_0005")
         migration_engine = create_engine(postgres_database_url, pool_pre_ping=True)
         try:
             with migration_engine.connect() as connection:
@@ -170,6 +170,9 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
                 runtime_tables_preserved = inspect(connection).has_table(
                     "assessment_runtime_states"
                 ) and inspect(connection).has_table("human_review_events")
+                candidate_versions_removed = not inspect(connection).has_table(
+                    "assessment_candidate_versions"
+                )
         finally:
             migration_engine.dispose()
 
@@ -180,6 +183,9 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
             with migration_engine.connect() as connection:
                 upgrade_revision = MigrationContext.configure(connection).get_current_revision()
                 assessment_table_created = inspect(connection).has_table("assessments")
+                candidate_versions_created = inspect(connection).has_table(
+                    "assessment_candidate_versions"
+                )
                 knowledge_tables_created = inspect(connection).has_table(
                     "knowledge_documents"
                 ) and inspect(connection).has_table("knowledge_chunks")
@@ -201,7 +207,9 @@ def postgres_engine(postgres_database_url: str) -> Iterator[Engine]:
     assert round_trip_downgrade_revision == "20260910_0005"
     assert identity_columns_removed
     assert runtime_tables_preserved
-    assert upgrade_revision == "20260911_0006"
+    assert candidate_versions_removed
+    assert upgrade_revision == "20261124_0007"
+    assert candidate_versions_created
     assert assessment_table_created
     assert knowledge_tables_created
     assert graph_tables_created

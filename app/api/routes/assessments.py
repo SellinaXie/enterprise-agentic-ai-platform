@@ -16,7 +16,11 @@ from app.runtime.models import (
 )
 from app.schemas.assessment import AssessmentRequest, AssessmentResponse
 from app.schemas.errors import ErrorResponse
-from app.schemas.product import ReviewCandidateResponse
+from app.schemas.product import (
+    CandidateVersionsResponse,
+    ReviewCandidateResponse,
+    RevisionSubmissionResponse,
+)
 from app.services.assessments import AssessmentService
 from app.services.runtime_governance import RuntimeGovernanceService
 
@@ -108,9 +112,45 @@ def list_reviews(
 def get_review_candidate(
     assessment_id: UUID,
     service: Annotated[RuntimeGovernanceService, Depends(get_runtime_governance_service)],
-    _: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
 ) -> ReviewCandidateResponse:
-    return service.get_review_candidate(assessment_id)
+    """Return the candidate plus the review actions this caller may take now."""
+    return service.get_review_candidate(assessment_id, principal=principal)
+
+
+@router.get(
+    "/{assessment_id}/candidate-versions",
+    response_model=CandidateVersionsResponse,
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorResponse}},
+    summary="List every gated candidate version for comparison",
+)
+def list_candidate_versions(
+    assessment_id: UUID,
+    service: Annotated[RuntimeGovernanceService, Depends(get_runtime_governance_service)],
+    _: Annotated[AuthenticatedPrincipal, Depends(require_reviewer_or_admin)],
+) -> CandidateVersionsResponse:
+    """Return candidates oldest first; version 0 is the original."""
+    return service.list_candidate_versions(assessment_id)
+
+
+@router.post(
+    "/{assessment_id}/revisions",
+    response_model=RevisionSubmissionResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorResponse},
+        status.HTTP_409_CONFLICT: {"model": ErrorResponse},
+        status.HTTP_502_BAD_GATEWAY: {"model": ErrorResponse},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse},
+    },
+    summary="Regenerate the candidate from the latest reviewer feedback",
+)
+def submit_revision(
+    assessment_id: UUID,
+    service: Annotated[AssessmentService, Depends(get_assessment_service)],
+    principal: Annotated[AuthenticatedPrincipal, Depends(get_authenticated_principal)],
+) -> RevisionSubmissionResponse:
+    """Allowed for the assessment's creator, reviewers and admins; the body is empty."""
+    return service.submit_revision(assessment_id, principal=principal)
 
 
 @router.post(

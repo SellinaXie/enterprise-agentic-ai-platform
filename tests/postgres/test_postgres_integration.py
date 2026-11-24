@@ -74,12 +74,13 @@ def test_connection_migration_and_native_schema(postgres_engine: Engine) -> None
         ).scalar_one()
 
     assert version.startswith("PostgreSQL ")
-    assert revision == "20260911_0006"
+    assert revision == "20261124_0007"
     assert "assessments" in schema.get_table_names()
     assert "knowledge_documents" in schema.get_table_names()
     assert "knowledge_chunks" in schema.get_table_names()
     assert "assessment_runtime_states" in schema.get_table_names()
     assert "human_review_events" in schema.get_table_names()
+    assert "assessment_candidate_versions" in schema.get_table_names()
     assert vector_version
     assert isinstance(columns["id"]["type"], PostgreSQLUUID)
     assert isinstance(columns["request_payload"]["type"], JSONB)

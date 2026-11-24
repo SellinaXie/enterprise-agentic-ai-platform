@@ -25,6 +25,13 @@ class PermissionDeniedError(ApplicationError):
     public_message = "The authenticated principal is not permitted to perform this action."
 
 
+class SelfReviewForbiddenError(ApplicationError):
+    """Raised when the assessment's creator attempts a human review decision on it."""
+
+    error_code = "self_review_forbidden"
+    public_message = "The creator of an assessment cannot make review decisions on it."
+
+
 class ConnectorNotConfiguredError(ApplicationError):
     """Raised when the single enterprise connector is disabled or incomplete."""
 

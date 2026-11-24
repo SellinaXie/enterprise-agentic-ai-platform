@@ -2,7 +2,7 @@
 
 import logging
 from time import perf_counter
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from pydantic import ValidationError
@@ -16,19 +16,23 @@ from app.core.exceptions import (
     AssessmentGenerationError,
     AssessmentNotFoundError,
     DatabaseUnavailableError,
+    PermissionDeniedError,
     PersistenceError,
+    RuntimeStateNotFoundError,
 )
 from app.identity.models import AuthenticatedPrincipal
 from app.models.assessment import ExternalEvidenceStatus
 from app.models.knowledge import RAGPreparation, RetrievedEvidence
 from app.models.knowledge_graph import HybridRAGPreparation
 from app.models.persisted_assessment import PersistedAssessment
+from app.runtime.models import HumanReviewRecord, RuntimeStatusResponse
 from app.schemas.assessment import (
     AssessmentFailure,
     AssessmentRequest,
     AssessmentResponse,
     AssessmentResult,
 )
+from app.schemas.product import RevisionSubmissionResponse
 from app.services.assessment_prompt import AssessmentPrompt, build_assessment_prompt
 from app.services.execution_router import (
     ExecutionMode,
@@ -148,6 +152,26 @@ class RuntimeGovernanceProtocol(Protocol):
         provenance_valid: bool = True,
         retrieval_duration_ms: int | None = None,
     ) -> PersistedAssessment: ...
+
+
+class RevisionGovernanceProtocol(RuntimeGovernanceProtocol, Protocol):
+    """Review-loop operations needed to regenerate a candidate from feedback."""
+
+    def get_revision_feedback(self, assessment_id: UUID) -> HumanReviewRecord: ...
+
+    def resume_revision(
+        self,
+        *,
+        assessment_id: UUID,
+        result: AssessmentResult,
+        evidence: tuple[RetrievedEvidence, ...],
+        execution: ExecutionMetadata,
+        duration_ms: int,
+        provenance_valid: bool = True,
+        feedback_review_id: UUID | None = None,
+    ) -> PersistedAssessment: ...
+
+    def get_runtime_status(self, assessment_id: UUID) -> RuntimeStatusResponse: ...
 
 
 class ExecutionRouterProtocol(Protocol):
@@ -351,6 +375,109 @@ class AssessmentService:
             extra={**log_context, "status": completed_record.status.value},
         )
         return self._to_response(completed_record)
+
+    def submit_revision(
+        self,
+        assessment_id: UUID,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> RevisionSubmissionResponse:
+        """Regenerate a candidate from the latest trusted reviewer feedback and re-gate it.
+
+        The first version always uses the deterministic path (one structured generation plus
+        retrieval when enabled); the version records that mode honestly. Generation failures
+        leave the review in ``revision_requested`` so the caller can retry.
+        """
+        if self._runtime_governance is None:
+            raise RuntimeStateNotFoundError
+        governance = cast(RevisionGovernanceProtocol, self._runtime_governance)
+        log_context = {"assessment_id": str(assessment_id)}
+        try:
+            record = self._repository.get_by_id(assessment_id)
+        except SQLAlchemyError as exc:
+            raise self._handle_database_error(exc) from exc
+        if record is None:
+            raise AssessmentNotFoundError
+        if principal is not None and not (
+            principal.can_review() or principal.subject == record.created_by_subject
+        ):
+            raise PermissionDeniedError
+
+        feedback = governance.get_revision_feedback(assessment_id)
+        try:
+            request = AssessmentRequest.model_validate(record.request_payload)
+        except ValidationError as exc:
+            raise PersistenceError from exc
+
+        logger.info("assessment_revision_started", extra=log_context)
+        started = perf_counter()
+        evidence: tuple[RetrievedEvidence, ...] = ()
+        execution: ExecutionMetadata = DeterministicExecutionMetadata(
+            preferred_execution_mode="deterministic",
+            routing_reason_codes=[RoutingReasonCode.REVISION_REGENERATION.value],
+        )
+        try:
+            rag_context: str | None = None
+            if self._rag_service is not None:
+                preparation = self._rag_service.prepare(request)
+                evidence = preparation.evidence
+                rag_context = preparation.context
+                graph_retrieval = getattr(preparation, "graph_retrieval", None)
+                if graph_retrieval is not None:
+                    execution = execution.model_copy(update={"graph_retrieval": graph_retrieval})
+            prompt_arguments: dict[str, Any] = {
+                "revision_feedback": feedback.comment,
+                "is_revision": True,
+            }
+            prompt = (
+                build_assessment_prompt(request, rag_context, **prompt_arguments)
+                if rag_context is not None
+                else build_assessment_prompt(request, **prompt_arguments)
+            )
+            result = self._generator.generate(prompt)
+            provenance_valid = self._provenance_is_valid(result, evidence)
+            result = self._apply_grounding_metadata(result, evidence)
+            request_id = get_request_id()
+            if request_id is not None:
+                execution = execution.model_copy(update={"request_id": request_id})
+        except ApplicationError as exc:
+            logger.warning(
+                "assessment_revision_failed",
+                extra={**log_context, "error_code": exc.error_code},
+            )
+            raise
+        except Exception as exc:
+            logger.error(
+                "assessment_revision_failed",
+                extra={**log_context, "generation_error_type": type(exc).__name__},
+            )
+            raise AssessmentGenerationError from exc
+
+        try:
+            persisted = governance.resume_revision(
+                assessment_id=assessment_id,
+                result=result,
+                evidence=evidence,
+                execution=execution,
+                duration_ms=max(0, round((perf_counter() - started) * 1_000)),
+                provenance_valid=provenance_valid,
+                feedback_review_id=feedback.review_id,
+            )
+        except SQLAlchemyError as exc:
+            raise self._handle_database_error(exc) from exc
+        status = governance.get_runtime_status(assessment_id)
+        logger.info(
+            "assessment_revision_submitted",
+            extra={**log_context, "status": persisted.status.value},
+        )
+        return RevisionSubmissionResponse(
+            assessment_id=assessment_id,
+            version_number=status.revision_count,
+            assessment_status=persisted.status,
+            review_status=status.review_status,
+            revision_count=status.revision_count,
+            gate_result=status.gate_result,
+        )
 
     def _route_execution(self, request: AssessmentRequest) -> ResolvedExecutionRoute:
         if self._execution_router is None:

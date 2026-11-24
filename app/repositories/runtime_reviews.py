@@ -1,4 +1,4 @@
-"""Repository for persisted V7C gate state and immutable-style review history."""
+"""Repository for persisted V7C gate state, review history, and candidate versions."""
 
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -9,8 +9,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models.assessment import utc_now
+from app.db.models.candidate_version import AssessmentCandidateVersionModel
 from app.db.models.runtime_review import AssessmentRuntimeStateModel, HumanReviewEventModel
 from app.runtime.models import (
+    CandidateVersionRecord,
     HumanReviewAction,
     HumanReviewRecord,
     HumanReviewStatus,
@@ -181,6 +183,41 @@ class RuntimeReviewRepository:
         ).all()
         return [_review_from_model(model) for model in models]
 
+    def add_candidate_version(
+        self,
+        *,
+        assessment_id: UUID,
+        version_number: int,
+        result: Mapping[str, Any],
+        execution: Mapping[str, Any] | None,
+        gate_result: QualityGateResult,
+        feedback_review_id: UUID | None = None,
+    ) -> CandidateVersionRecord:
+        """Append one gated candidate; existing versions are never updated."""
+        model = AssessmentCandidateVersionModel(
+            id=uuid4(),
+            assessment_id=assessment_id,
+            version_number=version_number,
+            result_payload=dict(result),
+            execution_metadata=dict(execution) if execution is not None else None,
+            gate_decision=gate_result.decision.value,
+            gate_result=gate_result.model_dump(mode="json"),
+            feedback_review_id=feedback_review_id,
+            created_at=self._clock(),
+        )
+        self._session.add(model)
+        self._session.flush()
+        return _candidate_version_from_model(model)
+
+    def list_candidate_versions(self, assessment_id: UUID) -> list[CandidateVersionRecord]:
+        """Return every persisted candidate version, oldest first."""
+        models = self._session.scalars(
+            select(AssessmentCandidateVersionModel)
+            .where(AssessmentCandidateVersionModel.assessment_id == assessment_id)
+            .order_by(AssessmentCandidateVersionModel.version_number)
+        ).all()
+        return [_candidate_version_from_model(model) for model in models]
+
     def commit(self) -> None:
         self._session.commit()
 
@@ -226,5 +263,19 @@ def _review_from_model(model: HumanReviewEventModel) -> HumanReviewRecord:
         comment=model.comment,
         reason_codes=[RuntimeReasonCode(item) for item in model.reason_codes],
         revision_number=model.revision_number,
+        created_at=_as_utc(model.created_at),
+    )
+
+
+def _candidate_version_from_model(
+    model: AssessmentCandidateVersionModel,
+) -> CandidateVersionRecord:
+    return CandidateVersionRecord(
+        assessment_id=model.assessment_id,
+        version_number=model.version_number,
+        result=dict(model.result_payload),
+        execution=(dict(model.execution_metadata) if model.execution_metadata else None),
+        gate_result=QualityGateResult.model_validate(model.gate_result),
+        feedback_review_id=model.feedback_review_id,
         created_at=_as_utc(model.created_at),
     )

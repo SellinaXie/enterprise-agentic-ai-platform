@@ -108,17 +108,9 @@ def get_product_read_service(
     return ProductReadService(assessments=assessments, runtime=reviews)
 
 
-def get_runtime_governance_service(
-    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
-    reviews: Annotated[RuntimeReviewRepository, Depends(get_runtime_review_repository)],
-    settings: Annotated[Settings, Depends(get_settings)],
-    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
-    telemetry_exporter: Annotated[
-        OperationalTelemetryExporter, Depends(get_operational_telemetry_exporter)
-    ],
-) -> RuntimeGovernanceService:
-    """Build the framework-neutral runtime gate and review coordinator."""
-    policy = RuntimeRiskPolicy(
+def build_runtime_risk_policy(settings: Settings) -> RuntimeRiskPolicy:
+    """Build the single configured runtime risk policy."""
+    return RuntimeRiskPolicy(
         medium_risk_decision=settings.runtime_medium_risk_decision,
         high_risk_decision=settings.runtime_high_risk_decision,
         critical_risk_decision=settings.runtime_critical_risk_decision,
@@ -130,14 +122,32 @@ def get_runtime_governance_service(
         block_critical_missing_mitigation=(settings.runtime_block_critical_missing_mitigation),
         max_human_revisions=settings.max_human_revisions,
     )
+
+
+def separation_of_duties_enforced(settings: Settings) -> bool:
+    """Enforce creator/reviewer separation whenever real identities are verified."""
+    return settings.auth_enabled
+
+
+def get_runtime_governance_service(
+    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    reviews: Annotated[RuntimeReviewRepository, Depends(get_runtime_review_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    metrics: Annotated[RuntimeMetricsRecorder, Depends(get_runtime_metrics_recorder)],
+    telemetry_exporter: Annotated[
+        OperationalTelemetryExporter, Depends(get_operational_telemetry_exporter)
+    ],
+) -> RuntimeGovernanceService:
+    """Build the framework-neutral runtime gate and review coordinator."""
     return RuntimeGovernanceService(
         assessments=assessments,
         reviews=reviews,
-        gate=RuntimeRiskGate(policy),
+        gate=RuntimeRiskGate(build_runtime_risk_policy(settings)),
         input_cost_per_million=settings.model_input_cost_per_1m_tokens,
         output_cost_per_million=settings.model_output_cost_per_1m_tokens,
         metrics=metrics,
         telemetry_exporter=telemetry_exporter,
+        enforce_separation_of_duties=separation_of_duties_enforced(settings),
     )
 
 

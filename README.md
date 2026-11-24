@@ -201,7 +201,7 @@ To stop the stack while preserving the application database, run `docker compose
 
 - `GET /health` is process liveness only. It does not query PostgreSQL or a model provider.
 - `GET /readiness` checks critical configuration, database connectivity, Alembic head
-  `20260911_0006`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
+  `20261124_0007`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
   when any check fails. It never calls a provider or exposes a DSN, credential, SQL error, or
   traceback.
 
@@ -282,13 +282,30 @@ GET  /api/v1/assessments/{id}/reviews
 POST /api/v1/assessments/{id}/reviews/approve
 POST /api/v1/assessments/{id}/reviews/reject
 POST /api/v1/assessments/{id}/reviews/request-revision
+GET  /api/v1/assessments/{id}/review-candidate
+GET  /api/v1/assessments/{id}/candidate-versions
+POST /api/v1/assessments/{id}/revisions
+GET  /api/v1/governance/policy
 ```
 
 Approval finalizes the exact persisted validated candidate. Rejection stores only a stable safe
-failure. A revision request preserves the candidate and all earlier events, increments a bounded
-counter, and can be resumed only through the trusted internal revision path after a new candidate
-has been generated and validated. Reviewer comments remain optional bounded, untrusted audit
-content and are never executed, added to system prompts, or allowed to change tool permissions.
+failure. A revision request preserves the candidate and all earlier events and increments a bounded
+counter. `POST /revisions` (empty body; the creator, a reviewer, or an admin) then regenerates the
+candidate from the latest persisted reviewer comment, re-runs the gate, and appends a candidate
+version; a generation failure leaves the review in `revision_requested` for retry. The first
+version of this path always uses deterministic structured generation (plus retrieval when enabled)
+and records `revision_regeneration` as its routing reason. Reviewer comments remain optional
+bounded, untrusted content: they are JSON-encoded inside a delimited `REVIEWER_FEEDBACK` block of
+the user prompt, never added to system prompts, never executed, and never allowed to change tool
+permissions. `GET /candidate-versions` (reviewers and admins) returns every gated candidate,
+oldest first, with the feedback that produced each revision.
+
+Separation of duties: when `AUTH_ENABLED=true`, the subject that created an assessment cannot
+approve, reject, or request revision of it (HTTP 403 `self_review_forbidden`; the attempt is
+logged as `self_review_denied`). `GET /review-candidate` returns `allowed_actions` and
+`denied_actions` with reason codes so the interface renders only what the backend permits.
+`GET /governance/policy` returns the configured gate thresholds, review triggers, block rules,
+fixed rules, revision limit, and separation-of-duties status with a SHA-256 `policy_fingerprint`.
 Authenticated API decisions derive reviewer subject, email, role, issuer, and request ID from the
 verified principal rather than the legacy client reviewer ID. `human_review_events` is append-only
 at the repository boundary.
@@ -1133,7 +1150,12 @@ the V7C tables and restores the prior assessment-status vocabulary.
 V8B revision `20260911_0006` adds nullable `assessments.created_by_subject` and nullable reviewer
 subject, email, role, issuer, and request-ID fields to `human_review_events`. Nullable additions
 preserve historical V7C rows. Its downgrade removes only these identity columns and their new
-assessment index. Alembic head is `20260911_0006`.
+assessment index.
+
+Revision `20261124_0007` adds append-only `assessment_candidate_versions` (one row per gated
+candidate, unique per assessment and version number, with the review event that triggered each
+revision). Assessments created before it have no version rows. Its downgrade drops only this
+table. Alembic head is `20261124_0007`.
 
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate

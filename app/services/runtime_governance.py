@@ -27,6 +27,7 @@ from app.core.exceptions import (
     PersistenceError,
     RevisionLimitReachedError,
     RuntimeStateNotFoundError,
+    SelfReviewForbiddenError,
 )
 from app.identity.models import AuthenticatedPrincipal
 from app.models.assessment import AssessmentStatus, RiskSeverity
@@ -37,6 +38,7 @@ from app.repositories.runtime_reviews import RuntimeReviewRepository
 from app.runtime.gate import RuntimeRiskGate
 from app.runtime.metrics import RuntimeMetricsRecorder
 from app.runtime.models import (
+    CandidateVersionFeedback,
     ExecutionHealth,
     HumanReviewAction,
     HumanReviewDecision,
@@ -46,6 +48,7 @@ from app.runtime.models import (
     OperationalTelemetry,
     QualityGateResult,
     QualityGateSignals,
+    ReviewActionName,
     RuntimeAssessmentState,
     RuntimeRiskDecision,
     RuntimeRiskLevel,
@@ -53,9 +56,15 @@ from app.runtime.models import (
     RuntimeTraceEvent,
     RuntimeTraceEventType,
 )
+from app.runtime.policy import SEPARATION_OF_DUTIES_ACTIONS
 from app.runtime.telemetry import build_operational_telemetry
 from app.schemas.assessment import AssessmentResult
-from app.schemas.product import ReviewCandidateResponse
+from app.schemas.product import (
+    CandidateVersionItem,
+    CandidateVersionsResponse,
+    DeniedReviewAction,
+    ReviewCandidateResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +119,7 @@ class RuntimeGovernanceService:
         metrics: RuntimeMetricsRecorder | None = None,
         telemetry_exporter: OperationalTelemetryExporter | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        enforce_separation_of_duties: bool = False,
     ) -> None:
         self._assessments = assessments
         self._reviews = reviews
@@ -119,6 +129,7 @@ class RuntimeGovernanceService:
         self._metrics = metrics
         self._telemetry_exporter = telemetry_exporter or NoOpTelemetryExporter()
         self._clock = clock
+        self._enforce_separation_of_duties = enforce_separation_of_duties
 
     def process_candidate(
         self,
@@ -133,6 +144,7 @@ class RuntimeGovernanceService:
         signal_overrides: dict[str, bool | RuntimeRiskLevel] | None = None,
         revision_count: int = 0,
         record_review_request: bool = True,
+        feedback_review_id: UUID | None = None,
     ) -> PersistedAssessment:
         """Persist one centralized gate decision and return the lifecycle record."""
         signals = self.derive_signals(
@@ -222,6 +234,14 @@ class RuntimeGovernanceService:
             revision_count=revision_count,
             max_revisions=self._gate.policy.max_human_revisions,
         )
+        self._reviews.add_candidate_version(
+            assessment_id=assessment_id,
+            version_number=revision_count,
+            result=result_payload,
+            execution=execution_payload,
+            gate_result=gate_result,
+            feedback_review_id=feedback_review_id,
+        )
         if review_status == HumanReviewStatus.PENDING and record_review_request:
             self._reviews.add_review_event(
                 assessment_id=assessment_id,
@@ -251,9 +271,14 @@ class RuntimeGovernanceService:
         self._required_assessment(assessment_id)
         return self._reviews.list_review_events(assessment_id)
 
-    def get_review_candidate(self, assessment_id: UUID) -> ReviewCandidateResponse:
+    def get_review_candidate(
+        self,
+        assessment_id: UUID,
+        *,
+        principal: AuthenticatedPrincipal | None = None,
+    ) -> ReviewCandidateResponse:
         """Return the exact validated candidate across the reviewer-only API boundary."""
-        self._required_assessment(assessment_id)
+        assessment = self._required_assessment(assessment_id)
         state = self._required_state(assessment_id)
         if state.candidate_result is None:
             raise PersistenceError
@@ -270,7 +295,44 @@ class RuntimeGovernanceService:
             telemetry=state.telemetry,
             revision_count=state.revision_count,
             max_revisions=state.max_revisions,
+            created_by_subject=assessment.created_by_subject,
+            **self._review_actions(assessment, state, principal),
         )
+
+    def list_candidate_versions(self, assessment_id: UUID) -> CandidateVersionsResponse:
+        """Return every gated candidate with the feedback that produced each revision."""
+        self._required_assessment(assessment_id)
+        versions = self._reviews.list_candidate_versions(assessment_id)
+        events = {
+            event.review_id: event for event in self._reviews.list_review_events(assessment_id)
+        }
+        items: list[CandidateVersionItem] = []
+        for version in versions:
+            event = events.get(version.feedback_review_id) if version.feedback_review_id else None
+            try:
+                result = AssessmentResult.model_validate(version.result)
+            except ValidationError as exc:
+                raise PersistenceError from exc
+            execution_mode = (version.execution or {}).get("execution_mode")
+            items.append(
+                CandidateVersionItem(
+                    version_number=version.version_number,
+                    created_at=version.created_at,
+                    execution_mode=execution_mode if isinstance(execution_mode, str) else None,
+                    gate_result=version.gate_result,
+                    result=result,
+                    feedback=(
+                        CandidateVersionFeedback(
+                            review_id=event.review_id,
+                            comment=event.comment,
+                            reviewer_subject=event.reviewer_subject,
+                        )
+                        if event is not None
+                        else None
+                    ),
+                )
+            )
+        return CandidateVersionsResponse(assessment_id=assessment_id, versions=items)
 
     def approve(
         self,
@@ -279,6 +341,7 @@ class RuntimeGovernanceService:
         *,
         principal: AuthenticatedPrincipal | None = None,
     ) -> HumanReviewDecision:
+        self._assert_independent_reviewer(assessment_id, principal, ReviewActionName.APPROVE)
         state = self._required_pending_state(assessment_id)
         if state.candidate_result is None:
             raise PersistenceError
@@ -309,6 +372,7 @@ class RuntimeGovernanceService:
         *,
         principal: AuthenticatedPrincipal | None = None,
     ) -> HumanReviewDecision:
+        self._assert_independent_reviewer(assessment_id, principal, ReviewActionName.REJECT)
         state = self._required_pending_state(assessment_id)
         record = self._assessments.mark_failed(
             assessment_id,
@@ -344,6 +408,9 @@ class RuntimeGovernanceService:
         *,
         principal: AuthenticatedPrincipal | None = None,
     ) -> HumanReviewDecision:
+        self._assert_independent_reviewer(
+            assessment_id, principal, ReviewActionName.REQUEST_REVISION
+        )
         state = self._required_pending_state(assessment_id)
         if state.revision_count >= state.max_revisions:
             raise RevisionLimitReachedError
@@ -413,6 +480,7 @@ class RuntimeGovernanceService:
         execution: ExecutionMetadata,
         duration_ms: int,
         provenance_valid: bool = True,
+        feedback_review_id: UUID | None = None,
     ) -> PersistedAssessment:
         """Persist a trusted regenerated candidate; reviewer text is never executed here."""
         state = self._required_state(assessment_id, for_update=True)
@@ -428,6 +496,7 @@ class RuntimeGovernanceService:
             provenance_valid=provenance_valid,
             revision_count=state.revision_count,
             record_review_request=False,
+            feedback_review_id=feedback_review_id,
         )
         new_state = self._required_state(assessment_id)
         resumed_at = self._clock()
@@ -532,6 +601,55 @@ class RuntimeGovernanceService:
             human_oversight_present=result.human_oversight.review_recommended,
             mitigations_complete=all(risk.mitigation.strip() for risk in result.risks),
         )
+
+    def _is_self_review(
+        self,
+        assessment: PersistedAssessment,
+        principal: AuthenticatedPrincipal | None,
+    ) -> bool:
+        if not self._enforce_separation_of_duties or principal is None:
+            return False
+        creator = assessment.created_by_subject
+        return creator is not None and creator == principal.subject
+
+    def _assert_independent_reviewer(
+        self,
+        assessment_id: UUID,
+        principal: AuthenticatedPrincipal | None,
+        action: ReviewActionName,
+    ) -> None:
+        assessment = self._required_assessment(assessment_id)
+        if self._is_self_review(assessment, principal):
+            logger.warning(
+                "self_review_denied",
+                extra={"assessment_id": str(assessment_id), "action": action.value},
+            )
+            raise SelfReviewForbiddenError
+
+    def _review_actions(
+        self,
+        assessment: PersistedAssessment,
+        state: RuntimeAssessmentState,
+        principal: AuthenticatedPrincipal | None,
+    ) -> dict[str, Any]:
+        allowed: list[ReviewActionName] = []
+        denied: list[DeniedReviewAction] = []
+        for action in SEPARATION_OF_DUTIES_ACTIONS:
+            code: str | None = None
+            if state.review_status != HumanReviewStatus.PENDING:
+                code = InvalidReviewTransitionError.error_code
+            elif self._is_self_review(assessment, principal):
+                code = SelfReviewForbiddenError.error_code
+            elif (
+                action == ReviewActionName.REQUEST_REVISION
+                and state.revision_count >= state.max_revisions
+            ):
+                code = RevisionLimitReachedError.error_code
+            if code is None:
+                allowed.append(action)
+            else:
+                denied.append(DeniedReviewAction(action=action, code=code))
+        return {"allowed_actions": allowed, "denied_actions": denied}
 
     def _required_assessment(self, assessment_id: UUID) -> PersistedAssessment:
         record = self._assessments.get_by_id(assessment_id)

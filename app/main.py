@@ -56,6 +56,7 @@ from app.core.exceptions import (
     PersistenceError,
     RevisionLimitReachedError,
     RuntimeStateNotFoundError,
+    SelfReviewForbiddenError,
     TextDecodeError,
     UnsupportedFileTypeError,
 )
@@ -157,6 +158,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         status_codes = {
             AuthenticationRequiredError: status.HTTP_401_UNAUTHORIZED,
             PermissionDeniedError: status.HTTP_403_FORBIDDEN,
+            SelfReviewForbiddenError: status.HTTP_403_FORBIDDEN,
             ConnectorNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
             ConnectorUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
             InvalidConnectorResponseError: status.HTTP_502_BAD_GATEWAY,
