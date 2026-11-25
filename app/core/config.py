@@ -86,6 +86,8 @@ class Settings(BaseSettings):
 
     execution_routing_enabled: bool = True
     execution_mode_override: Literal["deterministic", "single_agent", "multi_agent"] | None = None
+    # Demo deployments only: lets a caller pick the mode per request via ?execution_mode=.
+    execution_mode_selection_enabled: bool = False
 
     runtime_risk_gate_enabled: bool = False
     runtime_medium_risk_decision: Literal[

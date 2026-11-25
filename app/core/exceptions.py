@@ -25,6 +25,20 @@ class PermissionDeniedError(ApplicationError):
     public_message = "The authenticated principal is not permitted to perform this action."
 
 
+class SelfReviewForbiddenError(ApplicationError):
+    """Raised when the assessment's creator attempts a human review decision on it."""
+
+    error_code = "self_review_forbidden"
+    public_message = "The creator of an assessment cannot make review decisions on it."
+
+
+class ExecutionModeSelectionDisabledError(ApplicationError):
+    """Raised when a caller requests an execution mode on a deployment that forbids it."""
+
+    error_code = "execution_mode_selection_disabled"
+    public_message = "Selecting an execution mode per request is not enabled on this deployment."
+
+
 class ConnectorNotConfiguredError(ApplicationError):
     """Raised when the single enterprise connector is disabled or incomplete."""
 

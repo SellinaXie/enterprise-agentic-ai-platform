@@ -1,9 +1,128 @@
 # Enterprise AI Architecture & Risk Intelligence Platform
 
-Production-minded V8D platform for grounded enterprise AI architecture assessments. It combines
-an authenticated product interface with PostgreSQL/pgvector, RAG and GraphRAG, deterministic and
-agentic execution, evaluation, runtime risk gates, human review, production identity, telemetry,
-deployment, recovery, and one bounded enterprise connector.
+An enterprise AI assessment platform that earns its complexity: it picks the simplest execution
+path that fits the task, grounds every claim in retrievable evidence, and stops for an accountable
+human decision when risk calls for it.
+
+**Live:** [enterpriseai.sellinaxie.dev](https://enterpriseai.sellinaxie.dev). The overview and
+architecture pages are open to everyone; the workspace is invite-only.
+
+## What this project demonstrates
+
+- **Complexity is earned.** Deterministic, single-agent, and multi-agent execution share one
+  contract. A deterministic router picks the mode per request and records why, including any
+  capability fallback.
+- **Grounded evidence.** RAG over PostgreSQL + pgvector, enriched with GraphRAG traversal. Results
+  cite only retrieved document and chunk IDs, and provenance is checked before release.
+- **Governance in the runtime path.** A central risk gate decides whether a candidate completes,
+  completes with a warning, waits for human review, or is blocked. Reviews are append-only, creators
+  cannot review their own work, revisions are bounded, and every decision can be exported.
+- **Honest evaluation.** Offline retrieval and assessment benchmarks run network-free in CI and are
+  labelled as synthetic, never as production quality.
+- **Production engineering.** OIDC/JWKS identity with RBAC, Alembic migrations, readiness checks,
+  content-free telemetry with OpenTelemetry export, backup and restore runbooks, and CI on every
+  push.
+
+## How a request flows
+
+```mermaid
+flowchart LR
+    A[Assessment request] --> R{Execution router}
+    R -->|bounded scope| D[Deterministic]
+    R -->|tool use helps| S[Single agent]
+    R -->|specialists help| M[Multi-agent]
+    K[(Knowledge base<br/>RAG + GraphRAG)] -.evidence.-> D
+    K -.evidence.-> S
+    K -.evidence.-> M
+    D --> G{Runtime risk gate}
+    S --> G
+    M --> G
+    G -->|low / medium risk| C[Completed]
+    G -->|needs review| H[Human review]
+    G -->|critical| B[Blocked]
+    H -->|approve| C
+    H -->|reject| B
+    H -->|request revision| V[Regenerate] --> G
+```
+
+More detail: [architecture overview](docs/architecture/overview.md) and the [ADR index](docs/adr/README.md).
+To run it yourself, see [Container quickstart](#container-quickstart) or [Local setup](#local-setup).
+
+## API reference
+
+All paths are under `/api/v1` except `/health` and `/readiness`. With `AUTH_ENABLED=true`, every
+`/api/v1` route needs a bearer token. Errors use `{"error": {"code", "message"}}`. The full schema
+is served at `/openapi.json`.
+
+| Method and path | Who can call it | Purpose |
+| --- | --- | --- |
+| `GET /health`, `GET /readiness` | Public | Liveness and readiness |
+| `GET /session` | Any role | Current principal, email, and roles |
+| `POST /assessments` | Any role | Create an assessment; `?execution_mode=` only when `EXECUTION_MODE_SELECTION_ENABLED=true` |
+| `GET /assessments` | Any role | Paginated assessment register with status, decision, and review counts |
+| `GET /assessments/{id}` | Any role | Input, status, result, and execution metadata |
+| `GET /assessments/{id}/runtime-status` | Any role | Gate result, review status, and content-free telemetry |
+| `GET /assessments/{id}/review-candidate` | Reviewer, admin | Pending candidate plus `allowed_actions` and `denied_actions` |
+| `GET /assessments/{id}/reviews` | Reviewer, admin | Append-only review history |
+| `POST /assessments/{id}/reviews/approve` | Reviewer, admin; not the creator | Finalize the candidate |
+| `POST /assessments/{id}/reviews/reject` | Reviewer, admin; not the creator | Stop with a safe failure |
+| `POST /assessments/{id}/reviews/request-revision` | Reviewer, admin; not the creator | Request a bounded revision |
+| `POST /assessments/{id}/revisions` | Creator, reviewer, admin | Regenerate from the latest reviewer comment and re-gate |
+| `GET /assessments/{id}/candidate-versions` | Reviewer, admin | Every gated candidate for version comparison |
+| `GET /assessments/{id}/decision-record` | Reviewer, admin | Exportable decision record with `record_fingerprint` |
+| `GET /reviews/pending` | Reviewer, admin | Review queue |
+| `GET /governance/policy` | Any role | Gate policy in force with `policy_fingerprint` |
+| `GET /evaluation/summary` | Any role | Synthetic, network-free benchmark aggregates |
+| `POST /knowledge/files` | Any role | Ingest a PDF, DOCX, TXT, or Markdown file (10 MB default) |
+| `POST /knowledge/documents` | Any role | Ingest a plain-text document |
+| `GET /knowledge/documents/{id}` | Any role | Document metadata |
+| `POST /knowledge/documents/{id}/graph` | Any role | Opt-in GraphRAG enrichment |
+| `POST /knowledge/search` | Any role | Semantic search over embedded chunks |
+| `POST /connectors/policy-repository/sync` | Admin | Pull policy documents from the one configured repository |
+
+## Governance core
+
+- **Runtime risk gate.** Every candidate gets one of `auto_complete`, `complete_with_warning`,
+  `require_human_review`, or `block_and_escalate`, with machine-readable reason codes. Thresholds
+  are configuration and are published read-only at `GET /governance/policy`.
+- **Separation of duties.** With authentication on, the subject that created an assessment cannot
+  approve, reject, or request revision of it (HTTP 403 `self_review_forbidden`).
+- **Revision loop.** A reviewer requests a revision with a comment; `POST /revisions` regenerates the
+  candidate from that persisted comment, re-runs the gate, and appends a candidate version. Failures
+  leave the review in `revision_requested` for retry.
+- **Traceability.** Each candidate version stores the policy fingerprint it was gated under, and
+  `GET /decision-record` exports input, routing, cited evidence, versions, reviews, and outcome with
+  a stable SHA-256 fingerprint.
+
+Details are under [Runtime Reliability & Risk Controls](#runtime-reliability--risk-controls).
+
+## Changelog
+
+### 2026-11-24
+
+- Separation of duties on all three review actions.
+- `review-candidate` returns `created_by_subject`, `allowed_actions`, and `denied_actions`.
+- `POST /assessments/{id}/revisions` and `GET /assessments/{id}/candidate-versions`.
+- `GET /governance/policy` with a policy fingerprint.
+- `GET /assessments/{id}/decision-record` with a record fingerprint.
+- Demo-only per-request execution mode behind `EXECUTION_MODE_SELECTION_ENABLED` (default off).
+- Migrations `20261124_0007` (candidate versions) and `20261124_0008` (policy fingerprint).
+
+### 2026-11-12 to 2026-11-17
+
+- Frontend and API deployed together as two Vercel services.
+- Invited sign-in connected to the production identity provider and database.
+
+### 2026-09-28 to 2026-09-29
+
+- Database migrations run before API startup.
+- Capability-aware per-request execution routing with routing and fallback reason codes.
+
+### 2026-09-09 to 2026-09-18
+
+- V3 through V8D: RAG, single-agent and multi-agent execution, GraphRAG, file ingestion, offline
+  evaluation, runtime risk gates and human review, production foundation, identity, product
+  interface, deployment, and the policy repository connector. Each is described below.
 
 ## V8D Deployment and Enterprise Integration
 
@@ -24,8 +143,7 @@ authentication, read a JWT, or call the backend, so they render the same whether
 is deployed. `/demo` walks through the V0–V8 architecture journey plus architecture, evidence,
 risk, runtime governance, human review, and operations. The authenticated product now lives at
 `/dashboard` and the other application routes, separately protected by OIDC/JWKS and RBAC. The
-intended custom domains are `demo.sellinaxie.com` for the showcase and `app.sellinaxie.com` for the
-authenticated product.
+public site is [enterpriseai.sellinaxie.dev](https://enterpriseai.sellinaxie.dev).
 
 Production identity can use cached RS256 JWKS verification while retaining the fixed-key verifier
 for controlled local/test environments. An OpenTelemetry-first OTLP/HTTP adapter exports only an
@@ -201,7 +319,7 @@ To stop the stack while preserving the application database, run `docker compose
 
 - `GET /health` is process liveness only. It does not query PostgreSQL or a model provider.
 - `GET /readiness` checks critical configuration, database connectivity, Alembic head
-  `20260911_0006`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
+  `20261124_0008`, and required tables. It returns HTTP 503 with only `ready`/`not_ready` states
   when any check fails. It never calls a provider or exposes a DSN, credential, SQL error, or
   traceback.
 
@@ -282,13 +400,47 @@ GET  /api/v1/assessments/{id}/reviews
 POST /api/v1/assessments/{id}/reviews/approve
 POST /api/v1/assessments/{id}/reviews/reject
 POST /api/v1/assessments/{id}/reviews/request-revision
+GET  /api/v1/assessments/{id}/review-candidate
+GET  /api/v1/assessments/{id}/candidate-versions
+POST /api/v1/assessments/{id}/revisions
+GET  /api/v1/assessments/{id}/decision-record
+GET  /api/v1/governance/policy
 ```
 
 Approval finalizes the exact persisted validated candidate. Rejection stores only a stable safe
-failure. A revision request preserves the candidate and all earlier events, increments a bounded
-counter, and can be resumed only through the trusted internal revision path after a new candidate
-has been generated and validated. Reviewer comments remain optional bounded, untrusted audit
-content and are never executed, added to system prompts, or allowed to change tool permissions.
+failure. A revision request preserves the candidate and all earlier events and increments a bounded
+counter. `POST /revisions` (empty body; the creator, a reviewer, or an admin) then regenerates the
+candidate from the latest persisted reviewer comment, re-runs the gate, and appends a candidate
+version; a generation failure leaves the review in `revision_requested` for retry. The first
+version of this path always uses deterministic structured generation (plus retrieval when enabled)
+and records `revision_regeneration` as its routing reason. Reviewer comments remain optional
+bounded, untrusted content: they are JSON-encoded inside a delimited `REVIEWER_FEEDBACK` block of
+the user prompt, never added to system prompts, never executed, and never allowed to change tool
+permissions. `GET /candidate-versions` (reviewers and admins) returns every gated candidate,
+oldest first, with the feedback that produced each revision.
+
+Separation of duties: when `AUTH_ENABLED=true`, the subject that created an assessment cannot
+approve, reject, or request revision of it (HTTP 403 `self_review_forbidden`; the attempt is
+logged as `self_review_denied`). `GET /review-candidate` returns `allowed_actions` and
+`denied_actions` with reason codes so the interface renders only what the backend permits.
+`GET /governance/policy` returns the configured gate thresholds, review triggers, block rules,
+fixed rules, revision limit, separation-of-duties status, and whether per-request mode selection
+is enabled, with a SHA-256 `policy_fingerprint`. Each candidate version stores the fingerprint it
+was gated under.
+
+`GET /decision-record` (reviewers and admins) exports, from persisted state only, the input and
+creator, routing (preferred and actual mode with reason and fallback codes), cited evidence
+references (document and chunk IDs and titles, no source text), every candidate version with its
+gate result, policy fingerprint, and triggering feedback, every review event (subject, role,
+issuer, comment, time; no email), and the outcome. `record_fingerprint` is SHA-256 over the
+key-sorted record excluding `generated_at`, so it is stable while the state is unchanged.
+
+Demo deployments can set `EXECUTION_MODE_SELECTION_ENABLED=true` to accept
+`POST /api/v1/assessments?execution_mode=deterministic|single_agent|multi_agent`. The mode is a
+query parameter so it never enters the persisted request or the prompt. It takes precedence over
+routing and `EXECUTION_MODE_OVERRIDE`, records `caller_requested_mode`, and still applies
+capability fallback with its reason codes. With the switch off (the default), the parameter is
+rejected with HTTP 403 `execution_mode_selection_disabled`.
 Authenticated API decisions derive reviewer subject, email, role, issuer, and request ID from the
 verified principal rather than the legacy client reviewer ID. `human_review_events` is append-only
 at the repository boundary.
@@ -1133,7 +1285,15 @@ the V7C tables and restores the prior assessment-status vocabulary.
 V8B revision `20260911_0006` adds nullable `assessments.created_by_subject` and nullable reviewer
 subject, email, role, issuer, and request-ID fields to `human_review_events`. Nullable additions
 preserve historical V7C rows. Its downgrade removes only these identity columns and their new
-assessment index. Alembic head is `20260911_0006`.
+assessment index.
+
+Revision `20261124_0007` adds append-only `assessment_candidate_versions` (one row per gated
+candidate, unique per assessment and version number, with the review event that triggered each
+revision). Assessments created before it have no version rows. Its downgrade drops only this
+table.
+
+Revision `20261124_0008` adds nullable `assessment_candidate_versions.policy_fingerprint`;
+versions written earlier keep `null`. Alembic head is `20261124_0008`.
 
 Alembic is the production schema authority. `Base.metadata.create_all()` is used only for isolated
 SQLite tests, where the vector field has a JSON test variant; no SQLite test claims to validate

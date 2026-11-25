@@ -299,3 +299,32 @@ class RetryPolicy(RuntimeModel):
         if self.max_delay_ms < self.base_delay_ms:
             raise ValueError("max retry delay must be at least the base delay")
         return self
+
+
+class ReviewActionName(StrEnum):
+    """Human review decisions a caller may attempt on a pending candidate."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_REVISION = "request_revision"
+
+
+class CandidateVersionFeedback(RuntimeModel):
+    """The review event whose feedback produced a revised candidate."""
+
+    review_id: UUID
+    comment: str | None
+    reviewer_subject: str | None
+
+
+class CandidateVersionRecord(RuntimeModel):
+    """One append-only gated candidate; version 0 is the original."""
+
+    assessment_id: UUID
+    version_number: int = Field(ge=0)
+    result: dict[str, Any]
+    execution: dict[str, Any] | None
+    gate_result: QualityGateResult
+    policy_fingerprint: str | None = None
+    feedback_review_id: UUID | None
+    created_at: datetime

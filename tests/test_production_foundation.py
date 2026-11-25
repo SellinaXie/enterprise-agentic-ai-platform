@@ -145,7 +145,7 @@ def test_readiness_accepts_connected_head_schema(
 ) -> None:
     with engine.begin() as connection:
         connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
-        connection.execute(text("INSERT INTO alembic_version VALUES ('20260911_0006')"))
+        connection.execute(text("INSERT INTO alembic_version VALUES ('20261124_0008')"))
     application = create_app(
         Settings(
             _env_file=None,

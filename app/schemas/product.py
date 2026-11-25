@@ -1,4 +1,4 @@
-"""Read-only product schemas supporting the V8C interface."""
+"""Product schemas supporting the V8C interface and governance-core endpoints."""
 
 from datetime import datetime
 from typing import Any
@@ -8,9 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.assessment import AssessmentStatus
 from app.runtime.models import (
+    CandidateVersionFeedback,
     HumanReviewStatus,
     OperationalTelemetry,
     QualityGateResult,
+    ReviewActionName,
     RuntimeReasonCode,
     RuntimeRiskDecision,
     RuntimeRiskLevel,
@@ -66,6 +68,13 @@ class AssessmentListResponse(ProductSchema):
     review_status_counts: dict[str, int]
 
 
+class DeniedReviewAction(ProductSchema):
+    """A review action the caller cannot take now, with the backend's reason code."""
+
+    action: ReviewActionName
+    code: str
+
+
 class ReviewCandidateResponse(ProductSchema):
     """Validated candidate visible only across the reviewer authorization boundary."""
 
@@ -77,6 +86,68 @@ class ReviewCandidateResponse(ProductSchema):
     telemetry: OperationalTelemetry
     revision_count: int = Field(ge=0)
     max_revisions: int = Field(ge=0)
+    created_by_subject: str | None
+    allowed_actions: list[ReviewActionName]
+    denied_actions: list[DeniedReviewAction]
+
+
+class RevisionSubmissionResponse(ProductSchema):
+    """Outcome of regenerating a candidate from reviewer feedback."""
+
+    assessment_id: UUID
+    version_number: int = Field(ge=0)
+    assessment_status: AssessmentStatus
+    review_status: HumanReviewStatus
+    revision_count: int = Field(ge=0)
+    gate_result: QualityGateResult
+
+
+class CandidateVersionItem(ProductSchema):
+    """One gated candidate version for side-by-side comparison."""
+
+    version_number: int = Field(ge=0)
+    created_at: datetime
+    execution_mode: str | None
+    gate_result: QualityGateResult
+    policy_fingerprint: str | None
+    result: AssessmentResult
+    feedback: CandidateVersionFeedback | None
+
+
+class CandidateVersionsResponse(ProductSchema):
+    """Every persisted candidate version of one assessment, oldest first."""
+
+    assessment_id: UUID
+    versions: list[CandidateVersionItem]
+
+
+class PolicyFixedRule(ProductSchema):
+    """A gate rule that is not configurable."""
+
+    signal: RuntimeReasonCode
+    decision: RuntimeRiskDecision
+
+
+class SeparationOfDutiesPolicy(ProductSchema):
+    """Whether creators are barred from deciding on their own assessments."""
+
+    enforced: bool
+    applies_to: list[ReviewActionName]
+
+
+class GovernancePolicyResponse(ProductSchema):
+    """Read-only view of the runtime risk policy in force."""
+
+    policy_fingerprint: str
+    runtime_risk_gate_enabled: bool
+    risk_level_decisions: dict[RuntimeRiskLevel, RuntimeRiskDecision]
+    review_triggers: dict[str, bool]
+    block_rules: dict[str, bool]
+    fixed_rules: list[PolicyFixedRule]
+    max_human_revisions: int = Field(ge=0)
+    separation_of_duties: SeparationOfDutiesPolicy
+    execution_mode_selection_enabled: bool
+    reason_codes: list[RuntimeReasonCode]
 
 
 class EvaluationModeSummary(ProductSchema):

@@ -31,6 +31,8 @@ class RoutingReasonCode(StrEnum):
     CROSS_FUNCTIONAL_COORDINATION = "cross_functional_coordination"
     SPECIALIST_SEPARATION_BENEFICIAL = "specialist_separation_beneficial"
     LEGACY_FLAG_SELECTION = "legacy_flag_selection"
+    REVISION_REGENERATION = "revision_regeneration"
+    CALLER_REQUESTED_MODE = "caller_requested_mode"
 
 
 class FallbackReasonCode(StrEnum):
